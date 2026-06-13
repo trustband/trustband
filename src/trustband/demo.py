@@ -10,7 +10,11 @@ from __future__ import annotations
 from trustband.contracts import FileChange, FixPlan, Patch, ReviewReport, ReviewStatus
 from trustband.llm import FakeLLM
 
-CORRECT_PRICING = '''"""Tiny pricing module used as the TrustBand demo target."""
+CORRECT_PRICING = '''"""Tiny pricing module used as the TrustBand demo target.
+
+It contains a deliberate bug in ``order_total`` (see ISSUE.md): a percentage
+discount is applied as a flat subtraction instead of a proportion.
+"""
 
 
 def _subtotal(items):
@@ -19,7 +23,12 @@ def _subtotal(items):
 
 
 def order_total(items, discount_rate=0.0):
-    """Return the order total after applying a percentage discount."""
+    """Return the order total after applying a percentage discount.
+
+    Args:
+        items: list of (unit_price, quantity) pairs.
+        discount_rate: fraction in [0, 1]; e.g. 0.1 means 10% off.
+    """
     return _subtotal(items) * (1 - discount_rate)
 
 

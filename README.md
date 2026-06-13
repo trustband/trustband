@@ -16,6 +16,21 @@
 
 差异点在 **Verifier agent**:它不靠 LLM 自评,而是跑真实路径测试 + 回归检查 + 轨迹断言,用确定性证据决定这个修复值不值得合。
 
+## 架构
+
+```mermaid
+flowchart LR
+    I[Issue] --> P[Planner]
+    P -->|FixPlan| C[Coder]
+    C -->|Patch| V[Verifier]
+    V -->|VerdictReport| R[Reviewer]
+    R -->|ReviewReport| H[Human gate]
+    R -. request changes .-> C
+    H -->|approve| PR[PR.md + fix.diff]
+```
+
+每条箭头都是经 `AgentBus` 交接的强类型结构化产物;Verifier 的 `VerdictReport` 是整条流水线的合入前置。详见 [docs/architecture.md](./docs/architecture.md)。
+
 ## Agents
 
 | Agent | 职责 | 产物 |

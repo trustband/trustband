@@ -16,6 +16,21 @@ Making an AI write code is no longer the hard part; trusting it enough to merge 
 
 The differentiator is the **Verifier agent**: instead of an LLM grading itself, it runs real execution-path tests, regression checks, and trajectory assertions, then decides on evidence whether the fix has earned the merge.
 
+## Architecture
+
+```mermaid
+flowchart LR
+    I[Issue] --> P[Planner]
+    P -->|FixPlan| C[Coder]
+    C -->|Patch| V[Verifier]
+    V -->|VerdictReport| R[Reviewer]
+    R -->|ReviewReport| H[Human gate]
+    R -. request changes .-> C
+    H -->|approve| PR[PR.md + fix.diff]
+```
+
+Every arrow is a typed, structured artifact handed off over the `AgentBus`; the Verifier's `VerdictReport` gates the rest of the pipeline. See [docs/architecture.md](./docs/architecture.md).
+
 ## Agents
 
 | Agent | Responsibility | Output |
