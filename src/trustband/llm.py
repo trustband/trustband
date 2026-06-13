@@ -10,6 +10,11 @@ from __future__ import annotations
 
 import os
 from abc import ABC, abstractmethod
+from typing import TypeVar
+
+from pydantic import BaseModel, ValidationError
+
+_ModelT = TypeVar("_ModelT", bound=BaseModel)
 
 
 def extract_json(text: str) -> str:
@@ -113,3 +118,35 @@ class RealLLM(LLMClient):
         except self._anthropic.APIError as exc:  # pragma: no cover - needs a live key
             raise RuntimeError(f"Anthropic API call failed ({kind}): {exc}") from exc
         return "".join(block.text for block in response.content if block.type == "text")
+
+
+def parse_with_retry(
+    llm: LLMClient,
+    prompt: str,
+    kind: str,
+    model_cls: type[_ModelT],
+    retries: int = 2,
+) -> _ModelT:
+    """Call the LLM and parse its JSON into ``model_cls``, repairing on failure.
+
+    Real models occasionally emit malformed or schema-violating JSON. On a parse
+    or validation error this re-prompts the model with the specific error and asks
+    for valid JSON, up to ``retries`` extra attempts. Raises a clear RuntimeError if
+    every attempt fails — the error is reported, never silently swallowed.
+    """
+    current = prompt
+    last_error: Exception | None = None
+    for _ in range(retries + 1):
+        raw = llm.complete(current, kind=kind)
+        try:
+            return model_cls.model_validate_json(extract_json(raw))
+        except (ValidationError, ValueError) as exc:
+            last_error = exc
+            current = (
+                f"{prompt}\n\nYour previous reply could not be parsed as valid "
+                f"{model_cls.__name__} JSON: {exc}\nReturn ONLY a single valid JSON object."
+            )
+    raise RuntimeError(
+        f"LLM did not produce valid {model_cls.__name__} JSON "
+        f"after {retries + 1} attempts: {last_error}"
+    )

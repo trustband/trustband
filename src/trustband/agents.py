@@ -24,7 +24,7 @@ from trustband.contracts import (
     TriageReport,
     VerdictReport,
 )
-from trustband.llm import LLMClient, extract_json
+from trustband.llm import LLMClient, parse_with_retry
 
 _MAX_CONTEXT_BYTES = 8000
 
@@ -62,7 +62,7 @@ class Planner:
             "You are a planning agent. Read the issue and repo, return a FixPlan as JSON.\n"
             f"## Issue {issue.id}: {issue.title}\n{issue.description}\n\n## Repo\n{context}"
         )
-        plan = FixPlan.model_validate_json(extract_json(self.llm.complete(prompt, kind="plan")))
+        plan = parse_with_retry(self.llm, prompt, "plan", FixPlan)
         plan.issue_id = issue.id
         self.bus.send(
             AgentMessage(sender=self.name, kind="note", text=f"root cause: {plan.root_cause}")
@@ -93,7 +93,7 @@ class Coder:
             "(full file contents per change).\n"
             f"## Plan\n{plan.model_dump_json()}{review_note}\n\n## Repo\n{context}"
         )
-        patch = Patch.model_validate_json(extract_json(self.llm.complete(prompt, kind="code")))
+        patch = parse_with_retry(self.llm, prompt, "code", Patch)
         patch.issue_id = issue.id
         self.bus.send(
             AgentMessage(
@@ -133,9 +133,7 @@ class Reviewer:
             "security report, return a ReviewReport as JSON.\n"
             f"## Patch\n{patch.model_dump_json()}\n## Verdict\n{verdict.model_dump_json()}"
         )
-        review = ReviewReport.model_validate_json(
-            extract_json(self.llm.complete(prompt, kind="review"))
-        )
+        review = parse_with_retry(self.llm, prompt, "review", ReviewReport)
         review.issue_id = issue.id
         if not verdict.trustworthy:
             review.status = ReviewStatus.REQUEST_CHANGES
@@ -174,9 +172,7 @@ class Triage:
             "actionable bug. Return a TriageReport as JSON.\n"
             f"## Issue {issue.id}: {issue.title}\n{issue.description}"
         )
-        report = TriageReport.model_validate_json(
-            extract_json(self.llm.complete(prompt, kind="triage"))
-        )
+        report = parse_with_retry(self.llm, prompt, "triage", TriageReport)
         report.issue_id = issue.id
         if issue.failing_test and not report.target_tests:
             report.target_tests = [issue.failing_test]
