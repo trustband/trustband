@@ -8,6 +8,7 @@ patch the Verifier rejected.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from trustband.bus import AgentBus, AgentMessage
@@ -18,7 +19,9 @@ from trustband.contracts import (
     Patch,
     ReviewReport,
     ReviewStatus,
+    SecurityReport,
     Severity,
+    TriageReport,
     VerdictReport,
 )
 from trustband.llm import LLMClient, extract_json
@@ -113,11 +116,21 @@ class Reviewer:
         self.bus = bus
         self.llm = llm
 
-    def review(self, issue: Issue, patch: Patch, verdict: VerdictReport) -> ReviewReport:
-        """Produce a ReviewReport, overriding to request changes if the verdict failed."""
+    def review(
+        self,
+        issue: Issue,
+        patch: Patch,
+        verdict: VerdictReport,
+        security: SecurityReport | None = None,
+    ) -> ReviewReport:
+        """Produce a ReviewReport aggregating the Verifier and Security evidence.
+
+        The reviewer cannot approve a patch the Verifier rejected, nor one with a
+        critical security finding — even when every test passes.
+        """
         prompt = (
-            "You are a code reviewer. Given the patch and the verifier's report, "
-            "return a ReviewReport as JSON.\n"
+            "You are a code reviewer. Given the patch, the verifier's report and the "
+            "security report, return a ReviewReport as JSON.\n"
             f"## Patch\n{patch.model_dump_json()}\n## Verdict\n{verdict.model_dump_json()}"
         )
         review = ReviewReport.model_validate_json(
@@ -132,6 +145,9 @@ class Reviewer:
                     message=f"verifier rejected the patch: {verdict.reasons}",
                 )
             )
+        if security is not None and not security.clean:
+            review.status = ReviewStatus.REQUEST_CHANGES
+            review.findings.extend(security.findings)
         self.bus.send(
             AgentMessage(
                 sender=self.name, kind="note", text=f"review status: {review.status.value}"
@@ -139,3 +155,86 @@ class Reviewer:
         )
         self.bus.handoff(self.name, "human", review)
         return review
+
+
+class Triage:
+    """Classifies an incoming issue and decides whether it is actionable."""
+
+    name = "triage"
+
+    def __init__(self, bus: AgentBus, llm: LLMClient) -> None:
+        """Bind the agent to a bus and an LLM client."""
+        self.bus = bus
+        self.llm = llm
+
+    def run(self, issue: Issue) -> TriageReport:
+        """Triage the issue and hand the report off to the Planner."""
+        prompt = (
+            "You are a triage agent. Classify the issue and decide whether it is an "
+            "actionable bug. Return a TriageReport as JSON.\n"
+            f"## Issue {issue.id}: {issue.title}\n{issue.description}"
+        )
+        report = TriageReport.model_validate_json(
+            extract_json(self.llm.complete(prompt, kind="triage"))
+        )
+        report.issue_id = issue.id
+        if issue.failing_test and not report.target_tests:
+            report.target_tests = [issue.failing_test]
+        self.bus.send(
+            AgentMessage(
+                sender=self.name,
+                kind="note",
+                text=f"triage: actionable={report.actionable} category={report.category.value}",
+            )
+        )
+        self.bus.handoff(self.name, "planner", report)
+        return report
+
+
+_RISK_PATTERNS: list[tuple[re.Pattern[str], Severity, str]] = [
+    (re.compile(r"\beval\s*\("), Severity.CRITICAL, "use of eval()"),
+    (re.compile(r"\bexec\s*\("), Severity.CRITICAL, "use of exec()"),
+    (re.compile(r"\bos\.system\s*\("), Severity.CRITICAL, "use of os.system()"),
+    (re.compile(r"shell\s*=\s*True"), Severity.CRITICAL, "subprocess with shell=True"),
+    (re.compile(r"\bpickle\.loads?\s*\("), Severity.RISK, "untrusted pickle deserialization"),
+    (
+        re.compile(r'''(?i)(password|secret|api_key|token)\s*=\s*['"][^'"]+['"]'''),
+        Severity.CRITICAL,
+        "possible hardcoded secret",
+    ),
+]
+
+
+class SecurityReviewer:
+    """Deterministic (non-LLM) static scan of a patch for risky constructs."""
+
+    name = "security"
+
+    def __init__(self, bus: AgentBus) -> None:
+        """Bind the agent to a bus. The scan is deterministic, so it needs no LLM."""
+        self.bus = bus
+
+    def review(self, issue: Issue, patch: Patch) -> SecurityReport:
+        """Scan each changed file for risky patterns and report findings."""
+        findings: list[Finding] = []
+        for change in patch.changes:
+            for lineno, line in enumerate(change.new_content.splitlines(), start=1):
+                for pattern, severity, message in _RISK_PATTERNS:
+                    if pattern.search(line):
+                        findings.append(
+                            Finding(
+                                severity=severity, message=message, path=change.path, line=lineno
+                            )
+                        )
+        report = SecurityReport(
+            issue_id=issue.id, findings=findings, summary=f"{len(findings)} risk finding(s)"
+        )
+        self.bus.send(
+            AgentMessage(
+                sender=self.name,
+                kind="note",
+                text=f"security: {len(findings)} finding(s), clean={report.clean}",
+            )
+        )
+        self.bus.handoff(self.name, "reviewer", report)
+        return report

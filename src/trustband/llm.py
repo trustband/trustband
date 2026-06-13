@@ -33,18 +33,29 @@ class LLMClient(ABC):
 
 
 class FakeLLM(LLMClient):
-    """Deterministic client that replays canned responses keyed by ``kind``."""
+    """Deterministic client that replays canned responses keyed by ``kind``.
 
-    def __init__(self, responses: dict[str, str], default: str = "{}") -> None:
+    A response may be a single string or a list of strings. A list is consumed
+    by call order (1st call -> [0], 2nd -> [1], clamped to the last), which lets
+    a scenario return a flawed patch on round 1 and a clean one on round 2.
+    """
+
+    def __init__(self, responses: dict[str, str | list[str]], default: str = "{}") -> None:
         """Store the canned responses and an optional default for unknown kinds."""
         self._responses = dict(responses)
         self._default = default
         self.calls: list[tuple[str, str]] = []
+        self._counts: dict[str, int] = {}
 
     def complete(self, prompt: str, *, kind: str = "") -> str:
-        """Record the call and return the canned response for ``kind``."""
+        """Record the call and return the canned response for ``kind`` by call order."""
         self.calls.append((kind, prompt))
-        return self._responses.get(kind, self._default)
+        index = self._counts.get(kind, 0)
+        self._counts[kind] = index + 1
+        value = self._responses.get(kind, self._default)
+        if isinstance(value, list):
+            return value[min(index, len(value) - 1)] if value else self._default
+        return value
 
 
 class RealLLM(LLMClient):

@@ -161,3 +161,36 @@ class Decision(BaseModel):
     def approved(self) -> bool:
         """True when the gate approved."""
         return self.decision == DecisionType.APPROVE
+
+
+class IssueCategory(StrEnum):
+    """How the Triage agent classifies an incoming issue."""
+
+    BUG = "bug"
+    FEATURE = "feature"
+    QUESTION = "question"
+    FLAKY = "flaky"
+
+
+class TriageReport(BaseModel):
+    """Triage output: whether the issue is actionable and how to target it."""
+
+    issue_id: str
+    actionable: bool
+    category: IssueCategory = IssueCategory.BUG
+    severity: Severity = Severity.RISK
+    target_tests: list[str] = Field(default_factory=list)
+    rationale: str = ""
+
+
+class SecurityReport(BaseModel):
+    """Security/risk review of a patch (distinct from functional review)."""
+
+    issue_id: str
+    findings: list[Finding] = Field(default_factory=list)
+    summary: str = ""
+
+    @property
+    def clean(self) -> bool:
+        """True when no finding is CRITICAL (a critical finding blocks the merge)."""
+        return not any(finding.severity == Severity.CRITICAL for finding in self.findings)
