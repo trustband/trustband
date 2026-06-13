@@ -13,6 +13,7 @@ from pathlib import Path
 
 from trustband import __version__
 from trustband.agents import Coder, Planner, Reviewer, SecurityReviewer, Triage
+from trustband.benchmark import render_report, run_benchmark
 from trustband.bus import AgentBus, InMemoryBus
 from trustband.contracts import Issue
 from trustband.demo import make_demo_fake_llm
@@ -110,6 +111,17 @@ def _cmd_run(args: argparse.Namespace) -> int:
     return 0 if not result.actionable else 1
 
 
+def _cmd_bench(args: argparse.Namespace) -> int:
+    """Execute the 'bench' subcommand: run all scenarios and report metrics."""
+    report = run_benchmark(artifacts_dir=args.artifacts_dir)
+    markdown = render_report(report)
+    print(markdown)
+    if args.out:
+        Path(args.out).write_text(markdown)
+        print(f"(report written to {args.out})")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Parse arguments and dispatch. Returns the process exit code."""
     parser = argparse.ArgumentParser(
@@ -127,9 +139,15 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--llm", choices=["fake", "real"], default="fake")
     run.add_argument("--max-revisions", type=int, default=2, dest="max_revisions")
 
+    bench = subparsers.add_parser("bench", help="run all showcase scenarios and report metrics")
+    bench.add_argument("--out", default=None, help="write the markdown report to this path")
+    bench.add_argument("--artifacts-dir", default="artifacts/bench", dest="artifacts_dir")
+
     args = parser.parse_args(argv)
     if args.command == "run":
         return _cmd_run(args)
+    if args.command == "bench":
+        return _cmd_bench(args)
     parser.print_help()
     return 0
 

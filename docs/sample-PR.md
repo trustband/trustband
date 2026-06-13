@@ -1,9 +1,9 @@
-# PR: Bug: percentage discount is computed incorrectly (BUG-1)
+# PR: Bug: percentage discount is computed incorrectly (DISCOUNT-1)
 
-> Opened by TrustBand after the Verifier confirmed the fix earns the merge.
+> Opened by TrustBand after the Verifier and Security agents cleared the fix.
 
 ## Summary
-apply the discount as a percentage of the subtotal
+apply the discount as a percentage of the subtotal (revision 1)
 
 ## Root cause
 order_total subtracts discount_rate as a flat amount instead of applying it as a percentage of the subtotal
@@ -18,6 +18,9 @@ order_total subtracts discount_rate as a flat amount instead of applying it as a
 - PASS no_regressions — regressions=[]
 - PASS suite_green — failed=[]
 - PASS patch_nonempty — files=['pricing.py']
+
+## Security — clean
+- none
 
 ## Review — approve
 - none

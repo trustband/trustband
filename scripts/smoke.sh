@@ -19,4 +19,7 @@ uv run trustband run \
   --issue fixtures/buggy_app/ISSUE.md \
   --bus memory --llm fake
 
+echo "==> benchmark across all scenarios"
+uv run trustband bench
+
 echo "==> smoke OK"

@@ -1,21 +1,27 @@
 #!/usr/bin/env bash
-# Demo: show the bug is real (red), let TrustBand produce a *verified* fix, then
-# print the evidence-backed PR. Drives the 2-4 minute hackathon video.
+# Demo: walk through the band's headline behaviors, then the metrics.
+# Drives the 2-4 minute hackathon video. Fully offline and deterministic.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 echo "############################################################"
-echo "# TrustBand demo — don't just write code, earn the merge.  #"
+echo "# TrustBand — don't just write code, earn the merge.       #"
 echo "############################################################"
 echo
-echo "## 1. The bug is real: the target test fails today"
-uv run pytest fixtures/buggy_app -q || true
+echo "## 1. Happy path: a bug becomes a verified PR (1 revision)"
+uv run trustband run --scenario discount
 echo
-echo "## 2. The band collaborates on Band to produce a *verified* fix"
-uv run trustband run \
-  --repo fixtures/buggy_app \
-  --issue fixtures/buggy_app/ISSUE.md \
-  --bus memory --llm fake
+echo "## 2. The Verifier catches a regression the target test misses (loops to a clean fix)"
+uv run trustband run --scenario regression_trap
 echo
-echo "## 3. The PR TrustBand opened (evidence-backed)"
-cat artifacts/BUG-1/PR.md
+echo "## 3. The Security agent catches an eval() that passes every test"
+uv run trustband run --scenario risky_fix
+echo
+echo "## 4. Triage filters a non-actionable feature request"
+uv run trustband run --scenario non_actionable
+echo
+echo "## 5. Effect metrics across all scenarios"
+uv run trustband bench
+echo
+echo "## The PR TrustBand opened for the happy path:"
+cat artifacts/DISCOUNT-1/PR.md

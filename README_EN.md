@@ -20,38 +20,61 @@ The differentiator is the **Verifier agent**: instead of an LLM grading itself, 
 
 ```mermaid
 flowchart LR
-    I[Issue] --> P[Planner]
+    I[Issue] --> T[Triage]
+    T -->|actionable| P[Planner]
+    T -. non-actionable .-> X[Stop]
     P -->|FixPlan| C[Coder]
     C -->|Patch| V[Verifier]
-    V -->|VerdictReport| R[Reviewer]
+    V -->|VerdictReport| S[Security]
+    S -->|SecurityReport| R[Reviewer]
     R -->|ReviewReport| H[Human gate]
     R -. request changes .-> C
     H -->|approve| PR[PR.md + fix.diff]
 ```
 
-Every arrow is a typed, structured artifact handed off over the `AgentBus`; the Verifier's `VerdictReport` gates the rest of the pipeline. See [docs/architecture.md](./docs/architecture.md).
+Six specialized agents plus a human gate; every arrow is a typed artifact over the `AgentBus`. Trust rests on two complementary checks: the **Verifier** catches regressions the tests miss, and the **Security** agent catches risky-but-passing patches (e.g. `eval`). See [docs/architecture.md](./docs/architecture.md).
 
 ## Agents
 
 | Agent | Responsibility | Output |
 |---|---|---|
-| Planner | Read the issue + repo context, locate the root cause | `FixPlan` |
+| Triage | Classify + decide if actionable (decision gate) | `TriageReport` |
+| Planner | Read the issue + repo, locate the root cause | `FixPlan` |
 | Coder | Produce a patch from the plan (can wrap Claude Code / Codex) | `Patch` |
 | **Verifier** | Real-path tests + regression + trajectory assertions | `VerdictReport` |
-| Reviewer | Critical review, can request changes | `ReviewReport` |
+| Security | Deterministic scan for eval/exec/shell/hardcoded secrets | `SecurityReport` |
+| Reviewer | Aggregates Verifier + Security evidence, can request changes | `ReviewReport` |
 | Human gate | Approve / decline after seeing the evidence | `Decision` |
 
-All handoffs, structured context exchange, and human approval flow through Band (`--bus band`); an in-memory fake bus runs the same pipeline offline (`--bus memory`).
+Non-actionable issues stop at Triage; regressing or risky patches trigger a Coder revision loop. All handoffs, structured context exchange, and human approval flow through Band (`--bus band`); an in-memory fake bus runs the same pipeline offline (`--bus memory`).
 
 ## Quickstart (offline, free, deterministic)
 
 ```bash
 uv sync
 uv run pytest -q
-uv run trustband run --repo fixtures/buggy_app --issue fixtures/buggy_app/ISSUE.md --bus memory --llm fake
+uv run trustband run --scenario discount          # fix one bug end to end
+uv run trustband run --scenario regression_trap   # Verifier catches a regression, loops
+uv run trustband run --scenario risky_fix         # Security catches an eval()
+uv run trustband bench                            # effect metrics across all scenarios
 ```
 
 Offline mode needs no API keys. For live Band / real LLMs, see [SETUP.md](./SETUP.md).
+
+## Effect metrics
+
+`uv run trustband bench` reproduces deterministically across 5 showcase scenarios:
+
+| metric | value |
+|---|---|
+| correct outcomes | 5/5 (100%) |
+| fixes shipped | 4 |
+| bad patches caught by Verifier | 1 |
+| regressions prevented | 1 |
+| risky patches caught by Security | 1 |
+| non-actionable filtered | 1 |
+
+Full report: [docs/benchmark.md](./docs/benchmark.md).
 
 ## Status
 
