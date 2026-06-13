@@ -7,7 +7,14 @@ Real repositories use ``--llm real`` (Phase 4).
 
 from __future__ import annotations
 
-from trustband.contracts import FileChange, FixPlan, Patch, ReviewReport, ReviewStatus
+from trustband.contracts import (
+    FileChange,
+    FixPlan,
+    Patch,
+    ReviewReport,
+    ReviewStatus,
+    TriageReport,
+)
 from trustband.llm import FakeLLM
 
 CORRECT_PRICING = '''"""Tiny pricing module used as the TrustBand demo target.
@@ -64,8 +71,15 @@ def make_demo_fake_llm() -> FakeLLM:
         status=ReviewStatus.APPROVE,
         summary="minimal, on-point fix; covered by the existing suite and verified green",
     )
+    triage = TriageReport(
+        issue_id="BUG-1",
+        actionable=True,
+        target_tests=["test_percentage_discount"],
+        rationale="reproducible logic bug with a failing test",
+    )
     return FakeLLM(
         {
+            "triage": triage.model_dump_json(),
             "plan": plan.model_dump_json(),
             "code": patch.model_dump_json(),
             "review": review.model_dump_json(),
