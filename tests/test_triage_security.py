@@ -1,5 +1,9 @@
 """Phase 6.1 — Triage and SecurityReviewer agents + their contracts."""
 
+import importlib.util
+
+import pytest
+
 from trustband.agents import SecurityReviewer, Triage
 from trustband.bus import InMemoryBus
 from trustband.contracts import (
@@ -84,3 +88,12 @@ def test_security_clean_on_safe_patch():
     report = SecurityReviewer(bus).review(_issue(), _patch("def f(s):\n    return int(s)\n"))
     assert report.clean is True
     assert report.findings == []
+
+
+@pytest.mark.skipif(importlib.util.find_spec("bandit") is None, reason="bandit not installed")
+def test_security_bandit_adds_findings_beyond_regex():
+    content = "import hashlib\n\n\ndef weak(data):\n    return hashlib.md5(data).hexdigest()\n"
+    regex_only = SecurityReviewer(InMemoryBus()).review(_issue(), _patch(content))
+    with_bandit = SecurityReviewer(InMemoryBus(), use_bandit=True).review(_issue(), _patch(content))
+    assert regex_only.findings == []  # the regex heuristic misses a weak hash
+    assert len(with_bandit.findings) > 0  # bandit (real SAST) catches it

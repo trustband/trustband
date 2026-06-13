@@ -104,12 +104,22 @@ def _cmd_run(args: argparse.Namespace) -> int:
         Reproducer(bus, llm),
         Planner(bus, llm),
         Coder(bus, llm),
-        SecurityReviewer(bus),
+        SecurityReviewer(bus, use_bandit=args.bandit),
         Reviewer(bus, llm),
         max_revisions=args.max_revisions,
     )
     result = orchestrator.run(issue)
     _print_run(result, bus)
+    if args.open_pr and result.merged and result.patch is not None:
+        from trustband.git_pr import materialize_pr
+
+        authored = result.repro.authored_test if result.repro else None
+        patches = [patch for patch in (authored, result.patch) if patch is not None]
+        clone = materialize_pr(
+            issue.repo_path, patches, f"fix: {issue.id}", f"artifacts/{issue.id}/pr_clone"
+        )
+        if clone is not None:
+            print(f"PR branch materialized at: {clone} (run `gh pr create` there)")
     if result.merged:
         return 0
     # A correctly filtered non-actionable issue is a success, not a failure.
@@ -148,6 +158,10 @@ def main(argv: list[str] | None = None) -> int:
         "--band-agent", default="orchestrator", dest="band_agent", help="this agent's id"
     )
     run.add_argument("--llm", choices=["fake", "real"], default="fake")
+    run.add_argument("--bandit", action="store_true", help="enable bandit SAST")
+    run.add_argument(
+        "--open-pr", action="store_true", dest="open_pr", help="materialize a real git branch"
+    )
     run.add_argument("--max-revisions", type=int, default=2, dest="max_revisions")
 
     bench = subparsers.add_parser("bench", help="run all showcase scenarios and report metrics")

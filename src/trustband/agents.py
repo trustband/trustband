@@ -8,7 +8,11 @@ patch the Verifier rejected.
 
 from __future__ import annotations
 
+import json
 import re
+import subprocess
+import sys
+import tempfile
 from pathlib import Path
 
 from trustband.bus import AgentBus, AgentMessage
@@ -272,9 +276,10 @@ class SecurityReviewer:
 
     name = "security"
 
-    def __init__(self, bus: AgentBus) -> None:
-        """Bind the agent to a bus. The scan is deterministic, so it needs no LLM."""
+    def __init__(self, bus: AgentBus, use_bandit: bool = False) -> None:
+        """Bind the agent to a bus. The regex scan is always on; bandit SAST is opt-in."""
         self.bus = bus
+        self.use_bandit = use_bandit
 
     def review(self, issue: Issue, patch: Patch) -> SecurityReport:
         """Scan each changed file for risky patterns and report findings."""
@@ -288,6 +293,8 @@ class SecurityReviewer:
                                 severity=severity, message=message, path=change.path, line=lineno
                             )
                         )
+        if self.use_bandit:
+            findings.extend(self._bandit_findings(patch))
         report = SecurityReport(
             issue_id=issue.id, findings=findings, summary=f"{len(findings)} risk finding(s)"
         )
@@ -300,3 +307,43 @@ class SecurityReviewer:
         )
         self.bus.handoff(self.name, "reviewer", report)
         return report
+
+    def _bandit_findings(self, patch: Patch) -> list[Finding]:
+        """Run bandit (real SAST) on the patched files; return [] if unavailable or clean."""
+        severity_map = {
+            "HIGH": Severity.CRITICAL,
+            "MEDIUM": Severity.RISK,
+            "LOW": Severity.SUGGESTION,
+        }
+        with tempfile.TemporaryDirectory(prefix="trustband-bandit-") as td:
+            root = Path(td)
+            for change in patch.changes:
+                target = root / change.path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(change.new_content)
+            try:
+                proc = subprocess.run(
+                    [sys.executable, "-m", "bandit", "-q", "-f", "json", "-r", str(root)],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+            except (OSError, subprocess.SubprocessError):
+                return []
+        try:
+            data = json.loads(proc.stdout or "{}")
+        except ValueError:
+            return []
+        findings: list[Finding] = []
+        for result in data.get("results", []):
+            severity = severity_map.get(result.get("issue_severity", "LOW"), Severity.SUGGESTION)
+            message = f"bandit {result.get('test_id', '')}: {result.get('issue_text', '')}".strip()
+            findings.append(
+                Finding(
+                    severity=severity,
+                    message=message,
+                    path=Path(result.get("filename", "")).name,
+                    line=result.get("line_number"),
+                )
+            )
+        return findings

@@ -2,6 +2,8 @@
 
 Offline, deterministic run across all bundled showcase scenarios (`uv run trustband bench`).
 
+> **What this measures:** the orchestration and decision logic — the triage gate, the Verifier catching a regression, the Security agent blocking a risky patch, and the revision loop — on scenarios with **canned fixes (FakeLLM)**. The numbers are reproducible but do **not** measure a real model's coding ability. Run with `--llm real` to benchmark that.
+
 ## Summary
 | metric | value |
 |---|---|
