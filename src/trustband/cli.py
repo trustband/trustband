@@ -12,12 +12,13 @@ import re
 from pathlib import Path
 
 from trustband import __version__
-from trustband.agents import Coder, Planner, Reviewer
+from trustband.agents import Coder, Planner, Reviewer, SecurityReviewer, Triage
 from trustband.bus import AgentBus, InMemoryBus
 from trustband.contracts import Issue
 from trustband.demo import make_demo_fake_llm
 from trustband.llm import LLMClient, RealLLM
 from trustband.orchestrator import Orchestrator, RunResult
+from trustband.scenarios import get_scenario
 
 _TEST_RE = re.compile(r"`(test_[A-Za-z0-9_]+)`")
 
@@ -56,34 +57,57 @@ def _print_run(result: RunResult, bus: AgentBus) -> None:
     for message in bus.history():
         to = f" -> {message.recipient}" if message.recipient else ""
         print(f"[{message.sender}{to}] ({message.kind}) {message.text}")
-    verdict = result.verdict
-    print("\n=== Verdict ===")
-    print(
-        f"  {verdict.verdict.value.upper()} | "
-        f"newly_passing={verdict.newly_passing} | regressions={verdict.regressions}"
-    )
+    if result.triage is not None:
+        print(
+            f"\n=== Triage: actionable={result.triage.actionable} "
+            f"({result.triage.category.value}) ==="
+        )
+    if result.verdict is not None:
+        verdict = result.verdict
+        print("=== Verdict ===")
+        print(
+            f"  {verdict.verdict.value.upper()} | "
+            f"newly_passing={verdict.newly_passing} | regressions={verdict.regressions}"
+        )
+    if result.security is not None:
+        print(
+            f"=== Security: clean={result.security.clean} "
+            f"({len(result.security.findings)} finding(s)) ==="
+        )
+    print(f"=== Revisions: {result.revisions} | Merged: {result.merged} ===")
     if result.decision is not None:
         print(f"=== Human gate: {result.decision.decision.value} by {result.decision.actor} ===")
-    print(f"=== Merged: {result.merged} ===")
     if result.pr_path is not None:
         print(f"PR written to: {result.pr_path}")
 
 
 def _cmd_run(args: argparse.Namespace) -> int:
     """Execute the 'run' subcommand."""
-    issue = load_issue(args.repo, args.issue, args.issue_id)
+    if args.scenario:
+        scenario = get_scenario(args.scenario)
+        issue = scenario.issue()
+        llm = scenario.llm_factory()
+    else:
+        if not args.repo or not args.issue:
+            raise SystemExit("provide --scenario, or both --repo and --issue")
+        issue = load_issue(args.repo, args.issue, args.issue_id)
+        llm = _build_llm(args.llm)
     bus = _build_bus(args.bus)
-    llm = _build_llm(args.llm)
     orchestrator = Orchestrator(
         bus,
+        Triage(bus, llm),
         Planner(bus, llm),
         Coder(bus, llm),
+        SecurityReviewer(bus),
         Reviewer(bus, llm),
         max_revisions=args.max_revisions,
     )
     result = orchestrator.run(issue)
     _print_run(result, bus)
-    return 0 if result.merged else 1
+    if result.merged:
+        return 0
+    # A correctly filtered non-actionable issue is a success, not a failure.
+    return 0 if not result.actionable else 1
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -95,8 +119,9 @@ def main(argv: list[str] | None = None) -> int:
     subparsers = parser.add_subparsers(dest="command")
 
     run = subparsers.add_parser("run", help="turn an issue into a verified PR")
-    run.add_argument("--repo", required=True, help="path to the target repository")
-    run.add_argument("--issue", required=True, help="path to the issue markdown file")
+    run.add_argument("--scenario", default=None, help="run a bundled showcase scenario by name")
+    run.add_argument("--repo", help="path to the target repository")
+    run.add_argument("--issue", help="path to the issue markdown file")
     run.add_argument("--issue-id", default="BUG-1", dest="issue_id", help="issue identifier")
     run.add_argument("--bus", choices=["memory", "band"], default="memory")
     run.add_argument("--llm", choices=["fake", "real"], default="fake")
