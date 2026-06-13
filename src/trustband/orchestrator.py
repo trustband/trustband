@@ -27,6 +27,7 @@ from trustband.contracts import (
     TriageReport,
     VerdictReport,
 )
+from trustband.runner import run_pytest
 from trustband.verifier import verify
 
 _PARTICIPANTS = [
@@ -202,6 +203,8 @@ class Orchestrator:
 
         scaffold = repro.authored_test
         targets = repro.target_tests or triage.target_tests or None
+        # Baseline is computed once here and reused across the revision loop.
+        baseline = run_pytest(issue.repo_path, scaffold=scaffold)
         plan = self.planner.plan(issue)
 
         patch: Patch | None = None
@@ -217,7 +220,9 @@ class Orchestrator:
             revisions = revision
             patch = self.coder.code(issue, plan, review)
             patch.revision = revision
-            verdict = verify(issue, patch, target_tests=targets, scaffold=scaffold)
+            verdict = verify(
+                issue, patch, target_tests=targets, scaffold=scaffold, baseline=baseline
+            )
             self.bus.send(
                 AgentMessage(
                     sender="verifier",

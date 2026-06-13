@@ -22,8 +22,12 @@ from trustband.runner import run_pytest
 
 
 def _matches(target: str, nodeid: str) -> bool:
-    """True if a (possibly short) target test name refers to this node id."""
-    return target == nodeid or nodeid.endswith(f"::{target}") or target in nodeid
+    """True if a (possibly short) target test name refers to this node id.
+
+    Matches an exact node id, a ``::<target>`` suffix, or an equal final segment —
+    but not a loose substring, so ``test_add`` no longer matches ``test_addition``.
+    """
+    return target == nodeid or nodeid.endswith(f"::{target}") or nodeid.split("::")[-1] == target
 
 
 def judge(
@@ -112,11 +116,14 @@ def verify(
     patch: Patch,
     target_tests: list[str] | None = None,
     scaffold: Patch | None = None,
+    baseline: SuiteResult | None = None,
 ) -> VerdictReport:
     """Run baseline + post-patch suites on the issue's repo and judge the patch.
 
-    ``scaffold`` (e.g. an authored failing test) is applied to both runs.
+    ``scaffold`` (e.g. an authored failing test) is applied to both runs. A
+    precomputed ``baseline`` can be passed to avoid re-running it every revision.
     """
-    baseline = run_pytest(issue.repo_path, scaffold=scaffold)
+    if baseline is None:
+        baseline = run_pytest(issue.repo_path, scaffold=scaffold)
     after = run_pytest(issue.repo_path, patch, scaffold=scaffold)
     return judge(issue, patch, baseline, after, target_tests)

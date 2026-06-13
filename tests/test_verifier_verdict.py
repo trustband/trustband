@@ -9,7 +9,7 @@ the target green while breaking the no-discount and cart-summary tests.
 from pathlib import Path
 
 from trustband.contracts import FileChange, Issue, Patch, Verdict
-from trustband.verifier import verify
+from trustband.verifier import _matches, verify
 
 FIXTURE = Path(__file__).parent.parent / "fixtures" / "buggy_app"
 
@@ -45,6 +45,12 @@ def _issue() -> Issue:
         repo_path=str(FIXTURE),
         failing_test="test_percentage_discount",
     )
+
+
+def test_matches_is_not_a_loose_substring():
+    assert _matches("test_add", "m::test_add") is True
+    assert _matches("test_add", "test_add") is True
+    assert _matches("test_add", "pkg::test_addition") is False  # no longer over-matches
 
 
 def test_good_patch_is_trustworthy():
