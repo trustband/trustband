@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtualenv / uv
+.venv/
+.python-version
+
+# Test / tooling caches
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Secrets — real keys live in ~/.config/secrets/api-keys.env, never in the repo
+.env
+*.local
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# TrustBand run artifacts
+/artifacts/
+/.trustband/
