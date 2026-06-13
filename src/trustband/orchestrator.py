@@ -246,15 +246,15 @@ class Orchestrator:
         merged = False
         decision: Decision | None = None
         pr_path: Path | None = None
-        cleared = bool(
-            verdict
+        if (
+            verdict is not None
             and verdict.trustworthy
-            and security
+            and security is not None
             and security.clean
-            and review
+            and review is not None
             and review.approved
-        )
-        if cleared:
+            and patch is not None
+        ):
             decision = self.bus.request_approval(
                 ApprovalRequest(
                     issue_id=issue.id,

@@ -79,6 +79,10 @@ Offline mode needs no API keys. For live Band / real LLMs, see [SETUP.md](./SETU
 
 Full report: [docs/benchmark.md](./docs/benchmark.md).
 
+## Engineering quality
+
+CI (`.github/workflows/ci.yml`) runs ruff + mypy + 61 tests (89% coverage) + the benchmark on every push. Local equivalent: `bash scripts/smoke.sh`.
+
 ## Status
 
 Under active development (Band of Agents Hackathon, June 2026). Architecture diagram and demo land in Phase 5.

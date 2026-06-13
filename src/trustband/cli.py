@@ -88,6 +88,7 @@ def _print_run(result: RunResult, bus: AgentBus) -> None:
 
 def _cmd_run(args: argparse.Namespace) -> int:
     """Execute the 'run' subcommand."""
+    llm: LLMClient
     if args.scenario:
         scenario = get_scenario(args.scenario)
         issue = scenario.issue()

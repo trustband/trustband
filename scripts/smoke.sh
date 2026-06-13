@@ -10,6 +10,9 @@ uv sync
 echo "==> ruff"
 uv run ruff check .
 
+echo "==> mypy"
+uv run mypy src
+
 echo "==> pytest"
 uv run pytest -q
 

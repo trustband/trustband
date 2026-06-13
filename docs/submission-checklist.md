@@ -15,7 +15,8 @@ Deadline: **2026-06-19**.
 - [x] Bilingual README (`README.md` / `README_EN.md`) with badges
 - [x] `SETUP.md` with offline + live instructions
 - [x] Architecture diagram (`docs/architecture.md`)
-- [x] Green test suite + clean lint (`bash scripts/smoke.sh`)
+- [x] CI on every push: ruff + mypy + pytest + benchmark (`.github/workflows/ci.yml`)
+- [x] Green suite + clean lint + types + 89% coverage (`bash scripts/smoke.sh`)
 
 ## Demo
 - [x] Reproducible demo script (`scripts/demo.sh`)
