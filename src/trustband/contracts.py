@@ -194,3 +194,17 @@ class SecurityReport(BaseModel):
     def clean(self) -> bool:
         """True when no finding is CRITICAL (a critical finding blocks the merge)."""
         return not any(finding.severity == Severity.CRITICAL for finding in self.findings)
+
+
+class ReproReport(BaseModel):
+    """Reproducer output: whether the bug reproduces, and on which test(s).
+
+    ``authored_test`` is set when the Reproducer had to write a failing test (no
+    pre-existing one); that test becomes a scaffold applied to every verifier run.
+    """
+
+    issue_id: str
+    reproduced: bool
+    target_tests: list[str] = Field(default_factory=list)
+    authored_test: Patch | None = None
+    detail: str = ""

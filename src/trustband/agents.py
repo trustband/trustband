@@ -17,6 +17,7 @@ from trustband.contracts import (
     FixPlan,
     Issue,
     Patch,
+    ReproReport,
     ReviewReport,
     ReviewStatus,
     SecurityReport,
@@ -25,6 +26,7 @@ from trustband.contracts import (
     VerdictReport,
 )
 from trustband.llm import LLMClient, parse_with_retry
+from trustband.runner import run_pytest
 
 _MAX_CONTEXT_BYTES = 8000
 
@@ -181,6 +183,70 @@ class Triage:
                 sender=self.name,
                 kind="note",
                 text=f"triage: actionable={report.actionable} category={report.category.value}",
+            )
+        )
+        self.bus.handoff(self.name, "reproducer", report)
+        return report
+
+
+def _hits(targets: list[str], nodeids: set[str]) -> bool:
+    """True if any target test name appears within the given node ids."""
+    return any(target in nodeid for target in targets for nodeid in nodeids)
+
+
+class Reproducer:
+    """Confirms the bug reproduces before any fix; authors a failing test if none exists."""
+
+    name = "reproducer"
+
+    def __init__(self, bus: AgentBus, llm: LLMClient) -> None:
+        """Bind the agent to a bus and an LLM client."""
+        self.bus = bus
+        self.llm = llm
+
+    def run(self, issue: Issue, target_tests: list[str]) -> ReproReport:
+        """Confirm reproduction (or author a failing test), then hand off to the Planner."""
+        baseline = run_pytest(issue.repo_path)
+        baseline_red = set(baseline.failed) | set(baseline.errors)
+        if target_tests and _hits(target_tests, baseline_red):
+            return self._handoff(
+                ReproReport(
+                    issue_id=issue.id,
+                    reproduced=True,
+                    target_tests=list(target_tests),
+                    detail="target test(s) fail at baseline",
+                )
+            )
+
+        # No usable failing test — ask the model to author one that captures the bug.
+        prompt = (
+            "You are a reproduction agent. Write a pytest test that FAILS on the current "
+            "(buggy) code and will pass once the bug is fixed. Return a Patch as JSON that "
+            f"adds a new test file.\n## Issue {issue.id}: {issue.title}\n{issue.description}\n\n"
+            f"## Repo\n{read_repo_context(issue.repo_path)}"
+        )
+        authored = parse_with_retry(self.llm, prompt, "reproduce", Patch)
+        authored.issue_id = issue.id
+        after = run_pytest(issue.repo_path, scaffold=authored)
+        new_red = (set(after.failed) | set(after.errors)) - baseline_red
+        reproduced = bool(new_red)
+        return self._handoff(
+            ReproReport(
+                issue_id=issue.id,
+                reproduced=reproduced,
+                target_tests=sorted(new_red),
+                authored_test=authored if reproduced else None,
+                detail="authored a failing test" if reproduced else "could not reproduce the bug",
+            )
+        )
+
+    def _handoff(self, report: ReproReport) -> ReproReport:
+        """Post the repro note and hand the report to the Planner."""
+        self.bus.send(
+            AgentMessage(
+                sender=self.name,
+                kind="note",
+                text=f"reproduced={report.reproduced} targets={report.target_tests}",
             )
         )
         self.bus.handoff(self.name, "planner", report)

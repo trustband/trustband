@@ -1,15 +1,17 @@
 # Architecture
 
-TrustBand orchestrates six specialized agents plus a human gate in a shared Band
+TrustBand orchestrates seven specialized agents plus a human gate in a shared Band
 room. Every arrow below is a typed artifact handed off over the `AgentBus`. Trust
 rests on two complementary checks — the Verifier (regressions) and the Security
-agent (risky-but-passing patches).
+agent (risky-but-passing patches) — and the Reproducer proves the bug first.
 
 ```mermaid
 flowchart LR
     I[Issue] --> T[Triage]
-    T -->|actionable| P[Planner]
+    T -->|actionable| RP[Reproducer]
     T -. non-actionable .-> X[Stop]
+    RP -->|reproduced| P[Planner]
+    RP -. can't reproduce .-> X
     P -->|FixPlan| C[Coder]
     C -->|Patch| V[Verifier]
     V -->|VerdictReport| S[Security]
@@ -58,15 +60,16 @@ The same seam exists for the model: `FakeLLM` vs `RealLLM` (`src/trustband/llm.p
 ## Structured-context contracts
 
 All handoffs are Pydantic models (`src/trustband/contracts.py`):
-`Issue → TriageReport → FixPlan → Patch → VerdictReport → SecurityReport →
-ReviewReport → Decision`. They are both the "structured context" exchanged in
+`Issue → TriageReport → ReproReport → FixPlan → Patch → VerdictReport →
+SecurityReport → ReviewReport → Decision`. They are both the "structured context" exchanged in
 the room and the objective surface the Verifier, Security agent, and tests assert
 against.
 
 ## Showcase scenarios + metrics
 
 `src/trustband/scenarios.py` bundles diverse cases (clean fix, crash-on-None,
-a regression trap, a risky `eval` fix, a non-actionable feature request). Run
+a regression trap, a risky `eval` fix, a no-test bug where the Reproducer authors
+the test, and a non-actionable feature request). Run
 `uv run trustband bench` to execute all of them and emit the metrics in
 `docs/benchmark.md` — reproducible because the pipeline is offline and
 deterministic.

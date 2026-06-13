@@ -3,8 +3,8 @@
 Deadline: **2026-06-19**.
 
 ## Hard requirements
-- [x] ≥3 specialized agents — 6 here: Triage, Planner, Coder, Verifier, Security, Reviewer (+ human gate)
-- [x] Structured context exchange (7 typed Pydantic artifacts handed off in the room)
+- [x] ≥3 specialized agents — 7 here: Triage, Reproducer, Planner, Coder, Verifier, Security, Reviewer (+ human gate)
+- [x] Structured context exchange (8 typed Pydantic artifacts handed off in the room)
 - [x] Human-in-the-loop approval gate
 - [x] Revision loop (Verifier/Security push back → Coder revises)
 - [ ] Band is the *active* layer (live `BandBus`, Phase 4 — needs `BAND_API_KEY`)
@@ -21,7 +21,7 @@ Deadline: **2026-06-19**.
 - [x] Reproducible demo script (`scripts/demo.sh`)
 - [x] Sample PR artifact committed (`docs/sample-PR.md`)
 - [x] Effect-metrics report (`docs/benchmark.md`, `scripts/benchmark.sh`)
-- [x] Showcase scenarios (clean fix, regression trap, risky eval, non-actionable)
+- [x] Showcase scenarios (clean fix, crash-on-None, regression trap, risky eval, no-test→authored, non-actionable)
 - [ ] 2–4 minute demo video (problem → live demo → Band's role → trustworthy verdict)
 - [ ] Video uploaded (YouTube/Vimeo) and linked in README
 

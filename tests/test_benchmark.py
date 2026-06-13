@@ -8,7 +8,7 @@ def test_benchmark_outcomes_all_correct(tmp_path):
     report = run_benchmark(artifacts_dir=str(tmp_path / "bench"))
     assert report.total == len(SCENARIOS)
     assert report.correct == report.total  # every scenario reached its expected outcome
-    assert report.merged == 4  # 4 actionable bugs fixed; non_actionable filtered
+    assert report.merged == 5  # 5 actionable bugs fixed; non_actionable filtered
     assert report.bad_patches_caught >= 1  # regression_trap
     assert report.regressions_prevented >= 1
     assert report.security_issues_caught >= 1  # risky_fix

@@ -55,13 +55,19 @@ def _apply_patch(work: Path, patch: Patch) -> None:
 
 
 def run_pytest(
-    repo_dir: str | Path, patch: Patch | None = None, timeout: float = 120.0
+    repo_dir: str | Path,
+    patch: Patch | None = None,
+    *,
+    scaffold: Patch | None = None,
+    timeout: float = 120.0,
 ) -> SuiteResult:
-    """Copy ``repo_dir`` to a temp dir, optionally apply ``patch``, run pytest, parse results.
+    """Copy ``repo_dir`` to a temp dir, apply patches, run pytest, parse results.
 
     Args:
         repo_dir: path to the target repository.
-        patch: optional patch to apply to the copy before running.
+        patch: optional fix patch to apply to the copy before running.
+        scaffold: optional patch applied before ``patch`` on every run (e.g. an
+            authored failing test the Reproducer added).
         timeout: seconds before the pytest subprocess is abandoned.
 
     Returns:
@@ -71,8 +77,9 @@ def run_pytest(
     with tempfile.TemporaryDirectory(prefix="trustband-run-") as td:
         work = Path(td) / "repo"
         shutil.copytree(source, work, ignore=_IGNORE)
-        if patch is not None:
-            _apply_patch(work, patch)
+        for extra in (scaffold, patch):
+            if extra is not None:
+                _apply_patch(work, extra)
         xml_path = Path(td) / "report.xml"
         started = time.perf_counter()
         try:

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from trustband.agents import Coder, Planner, Reviewer, SecurityReviewer, Triage
+from trustband.agents import Coder, Planner, Reproducer, Reviewer, SecurityReviewer, Triage
 from trustband.bus import InMemoryBus
 from trustband.orchestrator import Orchestrator, RunResult
 from trustband.scenarios import SCENARIOS, Scenario
@@ -93,6 +93,7 @@ def _run_scenario(scenario: Scenario, artifacts_dir: str) -> RunResult:
     orchestrator = Orchestrator(
         bus,
         Triage(bus, llm),
+        Reproducer(bus, llm),
         Planner(bus, llm),
         Coder(bus, llm),
         SecurityReviewer(bus),

@@ -93,6 +93,22 @@ def add_one(value):
     return int(value) + 1
 '''
 
+NO_TEST_FIX = '''"""Tiny math helper."""
+
+
+def is_even(n):
+    """Return True if n is even."""
+    return n % 2 == 0
+'''
+
+NO_TEST_REPRO = '''from mathlib import is_even
+
+
+def test_is_even_parity():
+    assert is_even(4) is True
+    assert is_even(3) is False
+'''
+
 
 def _patch_json(path: str, content: str, summary: str) -> str:
     """Serialize a single-file Patch to JSON for a FakeLLM ``code`` response."""
@@ -110,22 +126,24 @@ def _make_llm(
     files: list[str],
     code: str | list[str],
     review_summary: str,
+    reproduce: str | None = None,
 ) -> FakeLLM:
-    """Build a FakeLLM with canned triage/plan/code/review responses."""
-    return FakeLLM(
-        {
-            "triage": TriageReport(
-                issue_id="X", actionable=actionable, category=category
-            ).model_dump_json(),
-            "plan": FixPlan(
-                issue_id="X", root_cause=root_cause, files_to_touch=files
-            ).model_dump_json(),
-            "code": code,
-            "review": ReviewReport(
-                issue_id="X", status=ReviewStatus.APPROVE, summary=review_summary
-            ).model_dump_json(),
-        }
-    )
+    """Build a FakeLLM with canned triage/plan/code/review (+ optional reproduce) responses."""
+    responses: dict[str, str | list[str]] = {
+        "triage": TriageReport(
+            issue_id="X", actionable=actionable, category=category
+        ).model_dump_json(),
+        "plan": FixPlan(
+            issue_id="X", root_cause=root_cause, files_to_touch=files
+        ).model_dump_json(),
+        "code": code,
+        "review": ReviewReport(
+            issue_id="X", status=ReviewStatus.APPROVE, summary=review_summary
+        ).model_dump_json(),
+    }
+    if reproduce is not None:
+        responses["reproduce"] = reproduce
+    return FakeLLM(responses)
 
 
 def _none_guard_llm() -> FakeLLM:
@@ -164,6 +182,18 @@ def _risky_fix_llm() -> FakeLLM:
             _patch_json("calc.py", RISKY_GOOD, "parse via int (round 2)"),
         ],
         review_summary="parses numeric strings safely",
+    )
+
+
+def _no_test_llm() -> FakeLLM:
+    return _make_llm(
+        actionable=True,
+        category=IssueCategory.BUG,
+        root_cause="is_even returns n % 2 == 1 instead of n % 2 == 0",
+        files=["mathlib.py"],
+        code=_patch_json("mathlib.py", NO_TEST_FIX, "fix is_even parity"),
+        review_summary="one-line parity fix, covered by the authored test",
+        reproduce=_patch_json("test_mathlib.py", NO_TEST_REPRO, "author a failing test"),
     )
 
 
@@ -242,6 +272,15 @@ SCENARIOS: list[Scenario] = [
         expected_merge=True,
         llm_factory=_risky_fix_llm,
         note="round-1 passes tests but uses eval; Security catches it, round-2 is safe",
+    ),
+    Scenario(
+        name="no_test",
+        repo=str(FIXTURES / "no_test"),
+        issue_id="MATH-1",
+        failing_test=None,
+        expected_merge=True,
+        llm_factory=_no_test_llm,
+        note="no failing test exists; the Reproducer authors one, then the fix merges",
     ),
     Scenario(
         name="non_actionable",

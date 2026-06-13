@@ -1,25 +1,27 @@
 """Wire the agents into a pipeline over the bus and emit a PR artifact.
 
-Flow: Triage (gate) -> Planner -> (Coder -> Verifier -> Security -> Reviewer)* ->
-human gate -> PR. A non-actionable issue stops at triage. The inner steps loop
-up to ``max_revisions`` so a regressing or risky patch can be revised. Only a
-trustworthy verdict **and** clean security **and** reviewer approval reach the
-human gate; only human approval writes the PR.
+Flow: Triage (gate) -> Reproducer (prove the bug, author a test if needed) ->
+Planner -> (Coder -> Verifier -> Security -> Reviewer)* -> human gate -> PR.
+A non-actionable or non-reproducible issue stops early. The inner steps loop up
+to ``max_revisions`` so a regressing or risky patch can be revised. Only a
+trustworthy verdict AND clean security AND reviewer approval reach the human gate.
 """
 
 from __future__ import annotations
 
 import difflib
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-from trustband.agents import Coder, Planner, Reviewer, SecurityReviewer, Triage
+from trustband.agents import Coder, Planner, Reproducer, Reviewer, SecurityReviewer, Triage
 from trustband.bus import AgentBus, AgentMessage, ApprovalRequest
 from trustband.contracts import (
     Decision,
     FixPlan,
     Issue,
     Patch,
+    ReproReport,
     ReviewReport,
     SecurityReport,
     TriageReport,
@@ -27,7 +29,16 @@ from trustband.contracts import (
 )
 from trustband.verifier import verify
 
-_PARTICIPANTS = ["triage", "planner", "coder", "verifier", "security", "reviewer", "human"]
+_PARTICIPANTS = [
+    "triage",
+    "reproducer",
+    "planner",
+    "coder",
+    "verifier",
+    "security",
+    "reviewer",
+    "human",
+]
 
 
 @dataclass
@@ -36,6 +47,7 @@ class RunResult:
 
     issue_id: str
     triage: TriageReport | None
+    repro: ReproReport | None
     plan: FixPlan | None
     patch: Patch | None
     verdict: VerdictReport | None
@@ -55,20 +67,21 @@ class RunResult:
         return self.triage is not None and self.triage.actionable
 
 
-def _unified_diff(repo_path: str | Path, patch: Patch) -> str:
-    """Render the patch as a unified diff against the current repo contents."""
+def _unified_diff(repo_path: str | Path, patches: Iterable[Patch]) -> str:
+    """Render one or more patches as a unified diff against the current repo."""
     root = Path(repo_path)
     blocks: list[str] = []
-    for change in patch.changes:
-        target = root / change.path
-        original = target.read_text() if target.exists() else ""
-        diff = difflib.unified_diff(
-            original.splitlines(keepends=True),
-            change.new_content.splitlines(keepends=True),
-            fromfile=f"a/{change.path}",
-            tofile=f"b/{change.path}",
-        )
-        blocks.append("".join(diff))
+    for patch in patches:
+        for change in patch.changes:
+            target = root / change.path
+            original = target.read_text() if target.exists() else ""
+            diff = difflib.unified_diff(
+                original.splitlines(keepends=True),
+                change.new_content.splitlines(keepends=True),
+                fromfile=f"a/{change.path}",
+                tofile=f"b/{change.path}",
+            )
+            blocks.append("".join(diff))
     return "\n".join(blocks)
 
 
@@ -116,6 +129,7 @@ class Orchestrator:
         self,
         bus: AgentBus,
         triage: Triage,
+        reproducer: Reproducer,
         planner: Planner,
         coder: Coder,
         security: SecurityReviewer,
@@ -126,12 +140,33 @@ class Orchestrator:
         """Bind the collaboration layer, the agents, and run limits."""
         self.bus = bus
         self.triage = triage
+        self.reproducer = reproducer
         self.planner = planner
         self.coder = coder
         self.security = security
         self.reviewer = reviewer
         self.max_revisions = max(1, max_revisions)
         self.artifacts_dir = Path(artifacts_dir)
+
+    def _stopped(self, issue: Issue, triage: TriageReport, repro: ReproReport | None) -> RunResult:
+        """Build a RunResult for a run that stopped before the fix loop."""
+        return RunResult(
+            issue_id=issue.id,
+            triage=triage,
+            repro=repro,
+            plan=None,
+            patch=None,
+            verdict=None,
+            review=None,
+            security=None,
+            decision=None,
+            merged=False,
+            pr_path=None,
+            revisions=0,
+            verifier_rejections=0,
+            regressions_caught=0,
+            security_blocks=0,
+        )
 
     def run(self, issue: Issue) -> RunResult:
         """Run the full pipeline for one issue and return the result + metrics."""
@@ -152,23 +187,21 @@ class Orchestrator:
                     text=f"triage: non-actionable ({triage.category.value}); stopping",
                 )
             )
-            return RunResult(
-                issue_id=issue.id,
-                triage=triage,
-                plan=None,
-                patch=None,
-                verdict=None,
-                review=None,
-                security=None,
-                decision=None,
-                merged=False,
-                pr_path=None,
-                revisions=0,
-                verifier_rejections=0,
-                regressions_caught=0,
-                security_blocks=0,
-            )
+            return self._stopped(issue, triage, None)
 
+        repro = self.reproducer.run(issue, triage.target_tests)
+        if not repro.reproduced:
+            self.bus.send(
+                AgentMessage(
+                    sender="orchestrator",
+                    kind="note",
+                    text="reproducer could not reproduce the bug; stopping",
+                )
+            )
+            return self._stopped(issue, triage, repro)
+
+        scaffold = repro.authored_test
+        targets = repro.target_tests or triage.target_tests or None
         plan = self.planner.plan(issue)
 
         patch: Patch | None = None
@@ -184,7 +217,7 @@ class Orchestrator:
             revisions = revision
             patch = self.coder.code(issue, plan, review)
             patch.revision = revision
-            verdict = verify(issue, patch, target_tests=triage.target_tests or None)
+            verdict = verify(issue, patch, target_tests=targets, scaffold=scaffold)
             self.bus.send(
                 AgentMessage(
                     sender="verifier",
@@ -226,7 +259,7 @@ class Orchestrator:
                 )
             )
             if decision.approved:
-                pr_path = self._open_pr(issue, plan, patch, verdict, review, security)
+                pr_path = self._open_pr(issue, plan, patch, verdict, review, security, scaffold)
                 merged = True
                 self.bus.send(
                     AgentMessage(
@@ -245,6 +278,7 @@ class Orchestrator:
         return RunResult(
             issue_id=issue.id,
             triage=triage,
+            repro=repro,
             plan=plan,
             patch=patch,
             verdict=verdict,
@@ -267,11 +301,13 @@ class Orchestrator:
         verdict: VerdictReport,
         review: ReviewReport,
         security: SecurityReport,
+        scaffold: Patch | None,
     ) -> Path:
-        """Write the PR description and diff into the artifacts directory."""
+        """Write the PR description and diff (authored test + fix) into the artifacts dir."""
         out_dir = self.artifacts_dir / issue.id
         out_dir.mkdir(parents=True, exist_ok=True)
-        diff = _unified_diff(issue.repo_path, patch)
+        patches = [change for change in (scaffold, patch) if change is not None]
+        diff = _unified_diff(issue.repo_path, patches)
         (out_dir / "fix.diff").write_text(diff)
         pr_path = out_dir / "PR.md"
         pr_path.write_text(_render_pr(issue, plan, patch, verdict, review, security, diff))

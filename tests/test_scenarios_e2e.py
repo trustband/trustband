@@ -2,7 +2,7 @@
 
 import pytest
 
-from trustband.agents import Coder, Planner, Reviewer, SecurityReviewer, Triage
+from trustband.agents import Coder, Planner, Reproducer, Reviewer, SecurityReviewer, Triage
 from trustband.bus import InMemoryBus
 from trustband.orchestrator import Orchestrator, RunResult
 from trustband.scenarios import SCENARIOS, Scenario, get_scenario
@@ -14,6 +14,7 @@ def _run(scenario: Scenario, tmp_path) -> RunResult:
     orchestrator = Orchestrator(
         bus,
         Triage(bus, llm),
+        Reproducer(bus, llm),
         Planner(bus, llm),
         Coder(bus, llm),
         SecurityReviewer(bus),
@@ -45,6 +46,13 @@ def test_risky_fix_is_blocked_by_security_then_cleaned(tmp_path):
     assert result.security_blocks >= 1
     # round 1 passed the tests — security, not the verifier, is what caught it
     assert result.verifier_rejections == 0
+
+
+def test_no_test_scenario_authors_a_failing_test(tmp_path):
+    result = _run(get_scenario("no_test"), tmp_path)
+    assert result.merged is True
+    assert result.repro is not None
+    assert result.repro.authored_test is not None  # the Reproducer wrote the test
 
 
 def test_non_actionable_stops_at_triage(tmp_path):

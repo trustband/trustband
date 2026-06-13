@@ -12,7 +12,7 @@ import re
 from pathlib import Path
 
 from trustband import __version__
-from trustband.agents import Coder, Planner, Reviewer, SecurityReviewer, Triage
+from trustband.agents import Coder, Planner, Reproducer, Reviewer, SecurityReviewer, Triage
 from trustband.benchmark import render_report, run_benchmark
 from trustband.bus import AgentBus, InMemoryBus
 from trustband.contracts import Issue
@@ -101,6 +101,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
     orchestrator = Orchestrator(
         bus,
         Triage(bus, llm),
+        Reproducer(bus, llm),
         Planner(bus, llm),
         Coder(bus, llm),
         SecurityReviewer(bus),

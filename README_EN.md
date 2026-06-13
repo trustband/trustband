@@ -21,8 +21,10 @@ The differentiator is the **Verifier agent**: instead of an LLM grading itself, 
 ```mermaid
 flowchart LR
     I[Issue] --> T[Triage]
-    T -->|actionable| P[Planner]
+    T -->|actionable| RP[Reproducer]
     T -. non-actionable .-> X[Stop]
+    RP -->|reproduced| P[Planner]
+    RP -. can't reproduce .-> X
     P -->|FixPlan| C[Coder]
     C -->|Patch| V[Verifier]
     V -->|VerdictReport| S[Security]
@@ -32,13 +34,14 @@ flowchart LR
     H -->|approve| PR[PR.md + fix.diff]
 ```
 
-Six specialized agents plus a human gate; every arrow is a typed artifact over the `AgentBus`. Trust rests on two complementary checks: the **Verifier** catches regressions the tests miss, and the **Security** agent catches risky-but-passing patches (e.g. `eval`). See [docs/architecture.md](./docs/architecture.md).
+Seven specialized agents plus a human gate; every arrow is a typed artifact over the `AgentBus`. Trust rests on two complementary checks — the **Verifier** catches regressions the tests miss, and the **Security** agent catches risky-but-passing patches (e.g. `eval`); when no failing test exists, the **Reproducer** authors one first. See [docs/architecture.md](./docs/architecture.md).
 
 ## Agents
 
 | Agent | Responsibility | Output |
 |---|---|---|
 | Triage | Classify + decide if actionable (decision gate) | `TriageReport` |
+| Reproducer | Prove the bug reproduces; author a failing test if none exists | `ReproReport` |
 | Planner | Read the issue + repo, locate the root cause | `FixPlan` |
 | Coder | Produce a patch from the plan (can wrap Claude Code / Codex) | `Patch` |
 | **Verifier** | Real-path tests + regression + trajectory assertions | `VerdictReport` |
@@ -67,8 +70,8 @@ Offline mode needs no API keys. For live Band / real LLMs, see [SETUP.md](./SETU
 
 | metric | value |
 |---|---|
-| correct outcomes | 5/5 (100%) |
-| fixes shipped | 4 |
+| correct outcomes | 6/6 (100%) |
+| fixes shipped | 5 |
 | bad patches caught by Verifier | 1 |
 | regressions prevented | 1 |
 | risky patches caught by Security | 1 |

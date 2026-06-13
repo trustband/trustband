@@ -5,7 +5,7 @@ This is the "system works" gate: fully offline, free, and deterministic.
 
 from pathlib import Path
 
-from trustband.agents import Coder, Planner, Reviewer, SecurityReviewer, Triage
+from trustband.agents import Coder, Planner, Reproducer, Reviewer, SecurityReviewer, Triage
 from trustband.bus import InMemoryBus
 from trustband.cli import main
 from trustband.contracts import Issue
@@ -31,6 +31,7 @@ def test_e2e_offline_produces_trustworthy_pr(tmp_path, monkeypatch):
     orchestrator = Orchestrator(
         bus,
         Triage(bus, llm),
+        Reproducer(bus, llm),
         Planner(bus, llm),
         Coder(bus, llm),
         SecurityReviewer(bus),
@@ -50,7 +51,8 @@ def test_e2e_offline_produces_trustworthy_pr(tmp_path, monkeypatch):
     assert "1 - discount_rate" in text
 
     senders = {message.sender for message in bus.history()}
-    assert {"triage", "planner", "coder", "verifier", "security", "reviewer"}.issubset(senders)
+    expected = {"triage", "reproducer", "planner", "coder", "verifier", "security", "reviewer"}
+    assert expected.issubset(senders)
 
 
 def test_cli_run_offline_returns_zero(tmp_path, monkeypatch, capsys):

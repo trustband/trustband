@@ -107,8 +107,16 @@ def judge(
     )
 
 
-def verify(issue: Issue, patch: Patch, target_tests: list[str] | None = None) -> VerdictReport:
-    """Run baseline + post-patch suites on the issue's repo and judge the patch."""
-    baseline = run_pytest(issue.repo_path)
-    after = run_pytest(issue.repo_path, patch)
+def verify(
+    issue: Issue,
+    patch: Patch,
+    target_tests: list[str] | None = None,
+    scaffold: Patch | None = None,
+) -> VerdictReport:
+    """Run baseline + post-patch suites on the issue's repo and judge the patch.
+
+    ``scaffold`` (e.g. an authored failing test) is applied to both runs.
+    """
+    baseline = run_pytest(issue.repo_path, scaffold=scaffold)
+    after = run_pytest(issue.repo_path, patch, scaffold=scaffold)
     return judge(issue, patch, baseline, after, target_tests)
