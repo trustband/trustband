@@ -1,8 +1,6 @@
 """Phase 3.1 — FakeLLM replays by kind; extract_json tolerates fences."""
 
-import pytest
-
-from trustband.llm import FakeLLM, RealLLM, extract_json
+from trustband.llm import FakeLLM, extract_json
 
 
 def test_fake_llm_replays_by_kind():
@@ -23,8 +21,3 @@ def test_fake_llm_sequences_lists_by_call_order():
     assert llm.complete("p", kind="code") == "first"
     assert llm.complete("p", kind="code") == "second"
     assert llm.complete("p", kind="code") == "second"  # clamped to the last entry
-
-
-def test_real_llm_not_wired_offline():
-    with pytest.raises(NotImplementedError):
-        RealLLM().complete("prompt", kind="plan")

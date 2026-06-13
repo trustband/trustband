@@ -38,11 +38,15 @@ def load_issue(repo: str, issue_file: str, issue_id: str = "BUG-1") -> Issue:
     )
 
 
-def _build_bus(kind: str) -> AgentBus:
+def _build_bus(args: argparse.Namespace) -> AgentBus:
     """Construct the collaboration layer for the chosen mode."""
-    if kind == "memory":
+    if args.bus == "memory":
         return InMemoryBus()
-    raise SystemExit("the 'band' bus needs Phase 4 wiring + BAND_API_KEY; use --bus memory offline")
+    if not args.band_room:
+        raise SystemExit("--bus band requires --band-room <chat_id> and BAND_API_KEY")
+    from trustband.band_bus import BandBus
+
+    return BandBus(chat_id=args.band_room, agent_id=args.band_agent)
 
 
 def _build_llm(kind: str) -> LLMClient:
@@ -93,7 +97,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
             raise SystemExit("provide --scenario, or both --repo and --issue")
         issue = load_issue(args.repo, args.issue, args.issue_id)
         llm = _build_llm(args.llm)
-    bus = _build_bus(args.bus)
+    bus = _build_bus(args)
     orchestrator = Orchestrator(
         bus,
         Triage(bus, llm),
@@ -136,6 +140,12 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--issue", help="path to the issue markdown file")
     run.add_argument("--issue-id", default="BUG-1", dest="issue_id", help="issue identifier")
     run.add_argument("--bus", choices=["memory", "band"], default="memory")
+    run.add_argument(
+        "--band-room", default=None, dest="band_room", help="Band chat/room id for --bus band"
+    )
+    run.add_argument(
+        "--band-agent", default="orchestrator", dest="band_agent", help="this agent's id"
+    )
     run.add_argument("--llm", choices=["fake", "real"], default="fake")
     run.add_argument("--max-revisions", type=int, default=2, dest="max_revisions")
 

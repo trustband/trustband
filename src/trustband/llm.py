@@ -8,6 +8,7 @@ network access or API keys are needed for the offline checkpoints.
 
 from __future__ import annotations
 
+import os
 from abc import ABC, abstractmethod
 
 
@@ -58,20 +59,57 @@ class FakeLLM(LLMClient):
         return value
 
 
+_SYSTEM_PROMPTS = {
+    "triage": "You are a triage agent classifying software issues.",
+    "plan": "You are a senior engineer planning a bug fix.",
+    "code": "You are a coding agent producing a minimal, correct patch.",
+    "review": "You are a rigorous code reviewer.",
+}
+_JSON_INSTRUCTION = (
+    " Respond with a single valid JSON object matching the requested schema and nothing "
+    "else — no prose, no markdown code fences."
+)
+
+
 class RealLLM(LLMClient):
-    """Skeleton real client. Wired to a provider in Phase 4 (needs API keys)."""
+    """Real client backed by the Anthropic Messages API (Claude).
+
+    Used only in live mode (``--llm real``); the offline pipeline uses
+    :class:`FakeLLM`. The API key and the ``anthropic`` SDK are resolved lazily so
+    importing this module never requires either. Defaults to ``claude-opus-4-8``;
+    sampling parameters are omitted because they are rejected on current models.
+    """
 
     def __init__(
-        self, provider: str = "anthropic", model: str | None = None, api_key: str | None = None
+        self,
+        model: str = "claude-opus-4-8",
+        api_key: str | None = None,
+        max_tokens: int = 16000,
     ) -> None:
-        """Capture provider settings; no network call happens until Phase 4."""
-        self.provider = provider
+        """Validate the key and build the Anthropic client (clear error if absent)."""
+        key = api_key or os.environ.get("ANTHROPIC_API_KEY")
+        if not key:
+            raise RuntimeError("ANTHROPIC_API_KEY is required for --llm real (use --llm fake)")
+        try:
+            import anthropic
+        except ImportError as exc:  # pragma: no cover - depends on the optional 'live' extra
+            raise RuntimeError("anthropic SDK not installed; run `uv sync --extra live`") from exc
+        self._anthropic = anthropic
         self.model = model
-        self._api_key = api_key
+        self.max_tokens = max_tokens
+        self._client = anthropic.Anthropic(api_key=key)
 
     def complete(self, prompt: str, *, kind: str = "") -> str:
-        """Not yet implemented — the offline pipeline uses :class:`FakeLLM`."""
-        raise NotImplementedError(
-            "RealLLM is wired in Phase 4 and requires provider API keys; "
-            "use FakeLLM (--llm fake) for the offline pipeline."
-        )
+        """Call Claude and return the concatenated text blocks of the response."""
+        system = _SYSTEM_PROMPTS.get(kind, "Respond only with the requested content.")
+        system += _JSON_INSTRUCTION
+        try:
+            response = self._client.messages.create(
+                model=self.model,
+                max_tokens=self.max_tokens,
+                system=system,
+                messages=[{"role": "user", "content": prompt}],
+            )
+        except self._anthropic.APIError as exc:  # pragma: no cover - needs a live key
+            raise RuntimeError(f"Anthropic API call failed ({kind}): {exc}") from exc
+        return "".join(block.text for block in response.content if block.type == "text")
