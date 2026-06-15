@@ -8,6 +8,7 @@ deterministically against the bundled fixture. Live mode (``--bus band``,
 from __future__ import annotations
 
 import argparse
+import os
 import re
 from pathlib import Path
 
@@ -17,7 +18,7 @@ from trustband.benchmark import render_report, run_benchmark
 from trustband.bus import AgentBus, InMemoryBus
 from trustband.contracts import Issue
 from trustband.demo import make_demo_fake_llm
-from trustband.llm import LLMClient, RealLLM
+from trustband.llm import LLMClient, OpenAILLM, RealLLM
 from trustband.orchestrator import Orchestrator, RunResult
 from trustband.scenarios import get_scenario
 
@@ -49,11 +50,13 @@ def _build_bus(args: argparse.Namespace) -> AgentBus:
     return BandBus(chat_id=args.band_room, agent_id=args.band_agent)
 
 
-def _build_llm(kind: str) -> LLMClient:
-    """Construct the LLM client for the chosen mode."""
-    if kind == "fake":
+def _build_llm(args: argparse.Namespace) -> LLMClient:
+    """Construct the LLM client. Real mode prefers an OpenAI-compatible endpoint."""
+    if args.llm == "fake":
         return make_demo_fake_llm()
-    return RealLLM()
+    if os.environ.get("OPENAI_API_KEY"):
+        return OpenAILLM(model=args.model)
+    return RealLLM(model=args.model) if args.model else RealLLM()
 
 
 def _print_run(result: RunResult, bus: AgentBus) -> None:
@@ -97,7 +100,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         if not args.repo or not args.issue:
             raise SystemExit("provide --scenario, or both --repo and --issue")
         issue = load_issue(args.repo, args.issue, args.issue_id)
-        llm = _build_llm(args.llm)
+        llm = _build_llm(args)
     bus = _build_bus(args)
     orchestrator = Orchestrator(
         bus,
@@ -159,6 +162,7 @@ def main(argv: list[str] | None = None) -> int:
         "--band-agent", default="orchestrator", dest="band_agent", help="this agent's id"
     )
     run.add_argument("--llm", choices=["fake", "real"], default="fake")
+    run.add_argument("--model", default=None, help="override model id (e.g. gpt-5.4-high)")
     run.add_argument("--bandit", action="store_true", help="enable bandit SAST")
     run.add_argument(
         "--open-pr", action="store_true", dest="open_pr", help="materialize a real git branch"

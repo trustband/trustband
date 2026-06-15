@@ -9,6 +9,7 @@ network access or API keys are needed for the offline checkpoints.
 from __future__ import annotations
 
 import os
+import time
 from abc import ABC, abstractmethod
 from typing import TypeVar
 
@@ -118,6 +119,79 @@ class RealLLM(LLMClient):
         except self._anthropic.APIError as exc:  # pragma: no cover - needs a live key
             raise RuntimeError(f"Anthropic API call failed ({kind}): {exc}") from exc
         return "".join(block.text for block in response.content if block.type == "text")
+
+
+class OpenAILLM(LLMClient):
+    """OpenAI-compatible chat client (works with the OpenAI API and compatible proxies).
+
+    Reads ``OPENAI_API_KEY`` and ``OPENAI_BASE_URL`` from the environment, and the
+    model from the ``model`` arg or ``TRUSTBAND_MODEL`` (default ``gpt-5.4-high``).
+    Uses ``max_completion_tokens`` and omits sampling params, since current GPT-5
+    models reject ``max_tokens``/``temperature``. Talks raw HTTP via httpx so proxy
+    quirks stay visible (e.g. a null ``content`` raises instead of silently passing).
+    """
+
+    def __init__(
+        self,
+        model: str | None = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        max_completion_tokens: int = 8000,
+        timeout: float = 180.0,
+    ) -> None:
+        """Validate the key and resolve model/base_url (clear error if the key is absent)."""
+        key = api_key or os.environ.get("OPENAI_API_KEY")
+        if not key:
+            raise RuntimeError("OPENAI_API_KEY is required for --llm real (OpenAI mode)")
+        try:
+            import httpx
+        except ImportError as exc:  # pragma: no cover - depends on the optional 'live' extra
+            raise RuntimeError("httpx not installed; run `uv sync --extra live`") from exc
+        self._httpx = httpx
+        self._key = key
+        self.model = model or os.environ.get("TRUSTBAND_MODEL", "gpt-5.4-high")
+        resolved = base_url or os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
+        self.base_url = resolved.rstrip("/")
+        self.max_completion_tokens = max_completion_tokens
+        self._timeout = timeout
+
+    def complete(self, prompt: str, *, kind: str = "", attempts: int = 3) -> str:
+        """Call chat-completions and return the message content, retrying transient errors."""
+        system = _SYSTEM_PROMPTS.get(kind, "Respond only with the requested content.")
+        system += _JSON_INSTRUCTION
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
+            "max_completion_tokens": self.max_completion_tokens,
+        }
+        last_error: Exception | str = "unknown error"
+        for attempt in range(attempts):
+            try:
+                response = self._httpx.post(
+                    f"{self.base_url}/chat/completions",
+                    headers={"Authorization": f"Bearer {self._key}"},
+                    json=payload,
+                    timeout=self._timeout,
+                )
+                response.raise_for_status()
+                data = response.json()
+            except self._httpx.HTTPError as exc:  # transient network / proxy blip — retry
+                last_error = exc
+                time.sleep(1.5 * (attempt + 1))
+                continue
+            choices = data.get("choices") or []
+            content = choices[0].get("message", {}).get("content") if choices else None
+            if content:
+                return content
+            last_error = f"empty content (model={self.model})"
+            time.sleep(1.5 * (attempt + 1))
+        raise RuntimeError(
+            f"OpenAI-compatible call failed ({kind}) after {attempts} attempts: {last_error}; "
+            "if content is always empty try another TRUSTBAND_MODEL (e.g. gpt-5.4-high)"
+        )
 
 
 def parse_with_retry(

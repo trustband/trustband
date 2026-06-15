@@ -57,7 +57,7 @@ class Issue(BaseModel):
 class FixPlan(BaseModel):
     """Planner output: root-cause hypothesis and acceptance criteria."""
 
-    issue_id: str
+    issue_id: str = ""  # authoritative value is set by the agent after parsing
     root_cause: str
     files_to_touch: list[str] = Field(default_factory=list)
     acceptance_criteria: list[str] = Field(default_factory=list)
@@ -75,7 +75,7 @@ class FileChange(BaseModel):
 class Patch(BaseModel):
     """Coder output: a set of file changes for one issue, possibly revised."""
 
-    issue_id: str
+    issue_id: str = ""  # authoritative value is set by the agent after parsing
     summary: str = ""
     changes: list[FileChange] = Field(default_factory=list)
     revision: int = 1
@@ -108,7 +108,7 @@ class AssertionResult(BaseModel):
 class VerdictReport(BaseModel):
     """Verifier output — the differentiator. Evidence that the patch earns the merge."""
 
-    issue_id: str
+    issue_id: str = ""  # authoritative value is set by the agent after parsing
     verdict: Verdict
     target_tests: list[str] = Field(default_factory=list)
     newly_passing: list[str] = Field(default_factory=list)
@@ -138,7 +138,7 @@ class Finding(BaseModel):
 class ReviewReport(BaseModel):
     """Reviewer output: status plus categorized findings."""
 
-    issue_id: str
+    issue_id: str = ""  # authoritative value is set by the agent after parsing
     status: ReviewStatus
     findings: list[Finding] = Field(default_factory=list)
     summary: str = ""
@@ -152,7 +152,7 @@ class ReviewReport(BaseModel):
 class Decision(BaseModel):
     """Human-in-the-loop gate decision on whether to open/merge the PR."""
 
-    issue_id: str
+    issue_id: str = ""  # authoritative value is set by the agent after parsing
     decision: DecisionType
     actor: str = "human"
     rationale: str = ""
@@ -175,7 +175,7 @@ class IssueCategory(StrEnum):
 class TriageReport(BaseModel):
     """Triage output: whether the issue is actionable and how to target it."""
 
-    issue_id: str
+    issue_id: str = ""  # authoritative value is set by the agent after parsing
     actionable: bool
     category: IssueCategory = IssueCategory.BUG
     severity: Severity = Severity.RISK
@@ -186,7 +186,7 @@ class TriageReport(BaseModel):
 class SecurityReport(BaseModel):
     """Security/risk review of a patch (distinct from functional review)."""
 
-    issue_id: str
+    issue_id: str = ""  # authoritative value is set by the agent after parsing
     findings: list[Finding] = Field(default_factory=list)
     summary: str = ""
 
@@ -203,7 +203,7 @@ class ReproReport(BaseModel):
     pre-existing one); that test becomes a scaffold applied to every verifier run.
     """
 
-    issue_id: str
+    issue_id: str = ""  # authoritative value is set by the agent after parsing
     reproduced: bool
     target_tests: list[str] = Field(default_factory=list)
     authored_test: Patch | None = None
