@@ -57,9 +57,9 @@ class BandBus(AgentBus):
         self._context: dict[str, dict[str, Any]] = {}
 
     def _post(self, content: str) -> None:
-        """Post a message to the Band room."""
+        """Post a message to the Band room (``mentions`` is required by the SDK schema)."""
         self._client.agent_api_messages.create_agent_chat_message(
-            self._chat_id, message=self._message_request(content=content)
+            self._chat_id, message=self._message_request(content=content, mentions=[])
         )
 
     def send(self, message: AgentMessage) -> None:

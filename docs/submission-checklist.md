@@ -16,7 +16,7 @@ Deadline: **2026-06-19**.
 - [x] `SETUP.md` with offline + live instructions
 - [x] Architecture diagram (`docs/architecture.md`)
 - [x] CI on every push: ruff + mypy + pytest + benchmark (`.github/workflows/ci.yml`)
-- [x] Green suite + clean lint + types + 89% coverage (`bash scripts/smoke.sh`)
+- [x] Green suite + clean lint + types + 93% coverage (`bash scripts/smoke.sh`)
 
 ## Demo
 - [x] Reproducible demo script (`scripts/demo.sh`)

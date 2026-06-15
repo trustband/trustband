@@ -94,7 +94,7 @@ Requires Python 3.11+ (uv fetches one if needed).
 ## 5. Quickstart (offline, free, deterministic)
 
 ```bash
-uv run pytest -q                                   # 63 tests
+uv run pytest -q                                   # 71 tests
 uv run trustband run --scenario discount           # one bug -> verified PR
 uv run trustband run --scenario regression_trap    # Verifier catches a regression, loops
 uv run trustband run --scenario risky_fix          # Security catches an eval(), loops
@@ -222,7 +222,7 @@ src/trustband/
   scenarios.py     # showcase registry + canned FakeLLMs
   cli.py           # `trustband run` / `trustband bench`
 fixtures/          # showcase target repos
-tests/             # 63 tests
+tests/             # 71 tests
 ```
 
 ---
@@ -230,5 +230,5 @@ tests/             # 63 tests
 ## 11. Quality gates
 
 CI (`.github/workflows/ci.yml`) runs on every push: **ruff** (lint), **mypy**
-(types), **pytest** (63 tests, 89% coverage, `--cov-fail-under=80`), and the
+(types), **pytest** (71 tests, 93% coverage, `--cov-fail-under=80`), and the
 **benchmark**. Local equivalent: `bash scripts/smoke.sh`.

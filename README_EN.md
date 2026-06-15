@@ -81,7 +81,7 @@ Full report: [docs/benchmark.md](./docs/benchmark.md).
 
 ## Engineering quality
 
-CI (`.github/workflows/ci.yml`) runs ruff + mypy + 61 tests (89% coverage) + the benchmark on every push. Local equivalent: `bash scripts/smoke.sh`.
+CI (`.github/workflows/ci.yml`) runs ruff + mypy + 71 tests (93% coverage) + the benchmark on every push. Local equivalent: `bash scripts/smoke.sh`.
 
 ## Status
 

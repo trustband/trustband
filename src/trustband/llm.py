@@ -155,8 +155,14 @@ class OpenAILLM(LLMClient):
         self.max_completion_tokens = max_completion_tokens
         self._timeout = timeout
 
-    def complete(self, prompt: str, *, kind: str = "", attempts: int = 3) -> str:
-        """Call chat-completions and return the message content, retrying transient errors."""
+    def complete(self, prompt: str, *, kind: str = "", transport_retries: int = 2) -> str:
+        """Call chat-completions and return the message content.
+
+        Retries only genuinely transient *transport* errors (network/TLS blips);
+        HTTP 4xx/5xx and empty content fail fast with a clear message. Schema/JSON
+        retries live one layer up in :func:`parse_with_retry`, so the two never
+        compound into a storm of calls.
+        """
         system = _SYSTEM_PROMPTS.get(kind, "Respond only with the requested content.")
         system += _JSON_INSTRUCTION
         payload = {
@@ -167,30 +173,32 @@ class OpenAILLM(LLMClient):
             ],
             "max_completion_tokens": self.max_completion_tokens,
         }
-        last_error: Exception | str = "unknown error"
-        for attempt in range(attempts):
+        url = f"{self.base_url}/chat/completions"
+        headers = {"Authorization": f"Bearer {self._key}"}
+        last_transport_error: Exception | None = None
+        for attempt in range(transport_retries + 1):
             try:
-                response = self._httpx.post(
-                    f"{self.base_url}/chat/completions",
-                    headers={"Authorization": f"Bearer {self._key}"},
-                    json=payload,
-                    timeout=self._timeout,
-                )
-                response.raise_for_status()
-                data = response.json()
-            except self._httpx.HTTPError as exc:  # transient network / proxy blip — retry
-                last_error = exc
+                response = self._httpx.post(url, headers=headers, json=payload, timeout=self._timeout)
+            except self._httpx.TransportError as exc:  # network/TLS blip — worth retrying
+                last_transport_error = exc
                 time.sleep(1.5 * (attempt + 1))
                 continue
+            try:
+                response.raise_for_status()
+            except self._httpx.HTTPStatusError as exc:  # 4xx/5xx — surface, don't loop
+                raise RuntimeError(f"OpenAI-compatible call failed ({kind}): {exc}") from exc
+            data = response.json()
             choices = data.get("choices") or []
             content = choices[0].get("message", {}).get("content") if choices else None
-            if content:
-                return content
-            last_error = f"empty content (model={self.model})"
-            time.sleep(1.5 * (attempt + 1))
+            if not content:
+                raise RuntimeError(
+                    f"OpenAI-compatible response had no content (model={self.model}, kind={kind}); "
+                    "try another TRUSTBAND_MODEL (e.g. gpt-5.4-high)"
+                )
+            return content
         raise RuntimeError(
-            f"OpenAI-compatible call failed ({kind}) after {attempts} attempts: {last_error}; "
-            "if content is always empty try another TRUSTBAND_MODEL (e.g. gpt-5.4-high)"
+            f"OpenAI-compatible call failed ({kind}) after {transport_retries + 1} attempts: "
+            f"{last_transport_error}"
         )
 
 
