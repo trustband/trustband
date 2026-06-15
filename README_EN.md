@@ -62,7 +62,7 @@ uv run trustband run --scenario risky_fix         # Security catches an eval()
 uv run trustband bench                            # effect metrics across all scenarios
 ```
 
-Offline mode needs no API keys. For live Band / real LLMs, see [SETUP.md](./SETUP.md).
+Offline mode needs no API keys. **Full usage & features: [docs/USAGE.md](./docs/USAGE.md)**; for live Band / real LLMs see [SETUP.md](./SETUP.md). The real-LLM path (OpenAI-compatible) is verified live — a real model fixed the `discount` bug end to end.
 
 ## Effect metrics
 

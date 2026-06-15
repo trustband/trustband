@@ -43,6 +43,9 @@ uv run trustband run \
   --bus band --llm real
 ```
 
-> Phase 4 (the `BandBus` and `RealLLM` implementations) is wired against the real
-> Band SDK once the API is verified — see `docs/band-findings.md`. Until then the
-> offline path above is the supported, working entry point.
+> **Status:** `RealLLM`, `OpenAILLM`, and `BandBus` are implemented. The
+> OpenAI-compatible real-LLM path is **verified live** — a real model fixed the
+> bundled `discount` bug end to end through the band (including the revision loop).
+> Use `OPENAI_API_KEY` + `OPENAI_BASE_URL` + `TRUSTBAND_MODEL` for an
+> OpenAI-compatible endpoint, or `ANTHROPIC_API_KEY` for Claude. Full details and
+> all CLI flags: [docs/USAGE.md](./docs/USAGE.md) §8.

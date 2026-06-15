@@ -62,7 +62,7 @@ uv run trustband run --scenario risky_fix        # 看 Security 拦下 eval
 uv run trustband bench                           # 全部展示场景的效果指标
 ```
 
-离线模式不需要任何 API key。接真 Band / 真 LLM 见 [SETUP.md](./SETUP.md)。
+离线模式不需要任何 API key。**完整使用与功能文档:[docs/USAGE.md](./docs/USAGE.md)**;接真 Band / 真 LLM 见 [SETUP.md](./SETUP.md)。真·LLM 路径(OpenAI 兼容)已 live 验证:真模型端到端修好了 `discount` bug。
 
 ## 测试效果数据
 
