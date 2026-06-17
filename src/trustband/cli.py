@@ -47,7 +47,11 @@ def _build_bus(args: argparse.Namespace) -> AgentBus:
         raise SystemExit("--bus band requires --band-room <chat_id> and BAND_API_KEY")
     from trustband.band_bus import BandBus
 
-    return BandBus(chat_id=args.band_room, agent_id=args.band_agent)
+    return BandBus(
+        chat_id=args.band_room,
+        agent_id=args.band_agent,
+        approval_timeout=args.approval_timeout,
+    )
 
 
 def _build_llm(args: argparse.Namespace) -> LLMClient:
@@ -176,6 +180,13 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--max-revisions", type=int, default=2, dest="max_revisions")
     run.add_argument(
         "--max-llm-calls", type=int, default=30, dest="max_llm_calls", help="per-run LLM call cap"
+    )
+    run.add_argument(
+        "--approval-timeout",
+        type=float,
+        default=300.0,
+        dest="approval_timeout",
+        help="seconds the Band human gate waits for an approve/decline before declining",
     )
 
     bench = subparsers.add_parser("bench", help="run all showcase scenarios and report metrics")
