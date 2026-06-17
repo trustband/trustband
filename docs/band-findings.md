@@ -1,7 +1,9 @@
-# Band SDK findings (Phase 0.2)
+# Band SDK findings (Phase 0.2 → verified live 2026-06-17)
 
-Status: **deferred to Phase 4** — the offline pipeline is built first behind the
-`AgentBus` abstraction, so live Band access is not on the critical path.
+Status: **VERIFIED LIVE** — the full 7-agent pipeline ran end-to-end over a real
+Band room with a real LLM and a real human approval. See "Verified live API" below.
+The offline pipeline was built first behind the `AgentBus` abstraction, so live Band
+access was never on the critical path.
 
 ## What we believe about Band (to be verified live)
 
@@ -15,9 +17,33 @@ From public sources (band.ai, docs.band.ai, launch coverage), as of June 2026:
   (e.g. `/approve`, `/decline`).
 - A free tier exists (account + API key from the agent dashboard).
 
-**Unverified specifics** (do NOT hard-code until confirmed against a live key):
-exact PyPI package name, the room/message/handoff/approval API surface, and how
-the Claude Code / Codex adapters register as peers.
+## Verified live API (2026-06-17, `band` SDK v1.0.0)
+
+Confirmed against a live `BAND_API_KEY` + agent UUID. `BandBus` (`src/trustband/band_bus.py`)
+is built on exactly these:
+
+- **Package**: `band` (import `band`; underlying `thenvoi_rest`). Client: `RestClient(api_key=..., base_url="https://app.band.ai")` — prod base URL is `https://app.band.ai` (the SDK default is the dev host).
+- **Post a message**: `agent_api_messages.create_agent_chat_message(chat_id, message=ChatMessageRequest(content, mentions))`.
+- **Read inbound**: `agent_api_messages.get_agent_next_message(chat_id).data` → `ChatMessage(content, id, sender_id, sender_type, ...)`; then `mark_agent_message_processed(chat_id, id)`. `list_agent_messages(chat_id)` lists *inbound* (not the agent's own posts).
+- **Chats**: `agent_api_chats.create_agent_chat(chat=ChatRoomRequest())` (no-arg works), `list_agent_chats()`.
+- **Participants**: `agent_api_participants.list_agent_chat_participants(chat_id)` and `add_agent_chat_participant(chat_id, participant=ParticipantRequest(participant_id, role="member"))`.
+- **Peers**: `agent_api_peers.list_agent_peers()` — returns who the agent may interact with (the human owner shows up here, which is how we got a participant to add).
+
+### Three server rules that only surface live (each cost one 4xx)
+
+1. **Every message needs ≥1 mention** — `ChatMessageRequest.mentions` has `minItems: 1`; an empty list is a 422.
+2. **`cannot_mention_self`** — an agent may not mention its own UUID; it must @ *another* participant. So `BandBus` lists participants and mentions the non-self ones (the human).
+3. **Agents can't self-join an existing room** — the agent gets 404 on a room it is not already a participant of, and cannot add itself. Path that works without UI: the agent *creates* a chat, then adds a known **peer** (the human) as a participant, then posts mentioning them. (A human can alternatively add the agent to any room from the band.ai UI.)
+
+### Live run evidence
+
+`trustband run --bus band --band-room <id> --llm real` produced a real Band transcript:
+triage → reproducer → planner → coder → verifier → security → reviewer → human gate,
+all posted to the room; the human replied `approve` in band.ai; `BandBus._read_decision`
+parsed it → merged. Verdict TRUSTWORTHY, 0 regressions. Artifact: `artifacts/BUG-1/PR.md`.
+
+**Still open**: how the Claude Code / Codex adapters register as *agent* peers (to make one
+of the seven agents a separate cross-process Band participant, not just the human).
 
 ## Why this does not block us
 
