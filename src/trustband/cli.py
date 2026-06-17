@@ -18,7 +18,7 @@ from trustband.benchmark import render_report, run_benchmark
 from trustband.bus import AgentBus, InMemoryBus
 from trustband.contracts import Issue
 from trustband.demo import make_demo_fake_llm
-from trustband.llm import LLMClient, OpenAILLM, RealLLM
+from trustband.llm import BudgetedLLM, LLMClient, OpenAILLM, RealLLM
 from trustband.orchestrator import Orchestrator, RunResult
 from trustband.scenarios import get_scenario
 
@@ -51,12 +51,18 @@ def _build_bus(args: argparse.Namespace) -> AgentBus:
 
 
 def _build_llm(args: argparse.Namespace) -> LLMClient:
-    """Construct the LLM client. Real mode prefers an OpenAI-compatible endpoint."""
+    """Construct the LLM client. Real mode prefers an OpenAI-compatible endpoint and is
+    wrapped in a per-run call budget (cost guardrail); the offline fake client is free."""
     if args.llm == "fake":
         return make_demo_fake_llm()
+    inner: LLMClient
     if os.environ.get("OPENAI_API_KEY"):
-        return OpenAILLM(model=args.model)
-    return RealLLM(model=args.model) if args.model else RealLLM()
+        inner = OpenAILLM(model=args.model)
+    elif args.model:
+        inner = RealLLM(model=args.model)
+    else:
+        inner = RealLLM()
+    return BudgetedLLM(inner, max_calls=args.max_llm_calls)
 
 
 def _print_run(result: RunResult, bus: AgentBus) -> None:
@@ -168,6 +174,9 @@ def main(argv: list[str] | None = None) -> int:
         "--open-pr", action="store_true", dest="open_pr", help="materialize a real git branch"
     )
     run.add_argument("--max-revisions", type=int, default=2, dest="max_revisions")
+    run.add_argument(
+        "--max-llm-calls", type=int, default=30, dest="max_llm_calls", help="per-run LLM call cap"
+    )
 
     bench = subparsers.add_parser("bench", help="run all showcase scenarios and report metrics")
     bench.add_argument("--out", default=None, help="write the markdown report to this path")

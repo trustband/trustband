@@ -204,6 +204,31 @@ class OpenAILLM(LLMClient):
         )
 
 
+class BudgetedLLM(LLMClient):
+    """Wrap an LLMClient and cap completions per run — a guardrail against runaway cost.
+
+    Real models cost money per call, and a misbehaving agent loop could otherwise burn
+    through many large-prompt calls. After ``max_calls`` completions this raises,
+    surfacing the runaway instead of silently spending.
+    """
+
+    def __init__(self, inner: LLMClient, max_calls: int = 30) -> None:
+        """Wrap ``inner``, allowing at most ``max_calls`` completions per run."""
+        self._inner = inner
+        self._max_calls = max_calls
+        self.calls = 0
+
+    def complete(self, prompt: str, *, kind: str = "") -> str:
+        """Enforce the call budget, then delegate to the wrapped client."""
+        if self.calls >= self._max_calls:
+            raise RuntimeError(
+                f"LLM call budget exhausted ({self._max_calls} calls); "
+                "raise --max-llm-calls if this run legitimately needs more"
+            )
+        self.calls += 1
+        return self._inner.complete(prompt, kind=kind)
+
+
 def parse_with_retry(
     llm: LLMClient,
     prompt: str,

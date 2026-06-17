@@ -3,7 +3,7 @@
 import pytest
 
 from trustband.contracts import FixPlan
-from trustband.llm import FakeLLM, extract_json, parse_with_retry
+from trustband.llm import BudgetedLLM, FakeLLM, extract_json, parse_with_retry
 
 
 def test_fake_llm_replays_by_kind():
@@ -38,3 +38,11 @@ def test_parse_with_retry_raises_after_exhaustion():
     llm = FakeLLM({"plan": "still not json"})
     with pytest.raises(RuntimeError, match="valid FixPlan JSON"):
         parse_with_retry(llm, "prompt", "plan", FixPlan, retries=1)
+
+
+def test_budgeted_llm_caps_calls():
+    budgeted = BudgetedLLM(FakeLLM({"plan": "{}"}), max_calls=2)
+    assert budgeted.complete("p", kind="plan") == "{}"
+    assert budgeted.complete("p", kind="plan") == "{}"
+    with pytest.raises(RuntimeError, match="budget exhausted"):
+        budgeted.complete("p", kind="plan")
