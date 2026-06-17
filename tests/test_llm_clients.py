@@ -101,15 +101,32 @@ from trustband.band_bus import BandBus  # noqa: E402
 
 
 class _BandResource:
+    """Mocks band's agent_api_messages using the REAL response/message types."""
+
     def __init__(self):
         self.posted: list[tuple[str, str]] = []
-        self.queue: list[object] = []
+        self.queue: list[tuple[str, str]] = []  # (content, sender_type)
+        self.processed: list[str] = []
 
     def create_agent_chat_message(self, chat_id, message):
         self.posted.append((chat_id, message.content))
 
     def get_agent_next_message(self, chat_id):
-        return self.queue.pop(0) if self.queue else type("M", (), {"content": None})()
+        from thenvoi_rest.agent_api_messages.types.get_agent_next_message_response import (
+            GetAgentNextMessageResponse,
+        )
+        from thenvoi_rest.types.chat_message import ChatMessage
+
+        if not self.queue:
+            return type("Empty", (), {"data": None})()
+        content, sender = self.queue.pop(0)
+        msg = ChatMessage(
+            content=content, id="m1", message_type="text", sender_id="u1", sender_type=sender
+        )
+        return GetAgentNextMessageResponse(data=msg)
+
+    def mark_agent_message_processed(self, chat_id, message_id):
+        self.processed.append(message_id)
 
 
 class _BandClient:
@@ -140,13 +157,23 @@ def test_band_handoff_shares_context(monkeypatch):
 
 def test_band_request_approval_parses_approve(monkeypatch):
     bus = _band(monkeypatch)
-    bus._client.agent_api_messages.queue = [type("M", (), {"content": "approve please"})()]
+    bus._client.agent_api_messages.queue = [("approve please", "user")]
     decision = bus.request_approval(ApprovalRequest(issue_id="X", summary="merge?"))
     assert decision.approved is True
+    assert bus._client.agent_api_messages.processed == ["m1"]  # message was marked processed
 
 
 def test_band_request_approval_parses_decline(monkeypatch):
     bus = _band(monkeypatch)
-    bus._client.agent_api_messages.queue = [type("M", (), {"content": "please decline this"})()]
+    bus._client.agent_api_messages.queue = [("please decline this", "user")]
     decision = bus.request_approval(ApprovalRequest(issue_id="X", summary="merge?"))
     assert decision.approved is False
+
+
+def test_band_request_approval_ignores_agent_own_messages(monkeypatch):
+    bus = _band(monkeypatch)
+    bus._approval_timeout = 0.2  # keep the timeout path fast
+    # an "approve" posted by the agent/system must NOT count as the human gate decision
+    bus._client.agent_api_messages.queue = [("approve!!", "agent")]
+    decision = bus.request_approval(ApprovalRequest(issue_id="X", summary="merge?"))
+    assert decision.approved is False  # ignored -> times out -> decline

@@ -135,32 +135,38 @@ class BandBus(AgentBus):
         )
 
     def _read_decision(self, request: ApprovalRequest) -> Decision | None:
-        """Read the next room message and interpret it as an approval decision, if any.
+        """Read the agent's next inbound room message and interpret it as a decision.
 
-        Returns None when no decisive message is available yet (handled, not swallowed):
-        the caller keeps polling until the timeout.
+        The Band REST shape is ``GetAgentNextMessageResponse.data`` -> ``ChatMessage``
+        (``content`` / ``sender_type`` / ``id``). We skip our own and system posts,
+        mark the message processed so the queue advances, and return None when there
+        is no decisive human message yet — the caller keeps polling until the timeout.
         """
         try:
             result = self._client.agent_api_messages.get_agent_next_message(self._chat_id)
-        except Exception:  # network blip / no message yet — treat as "nothing to read"
+        except Exception:  # transient / no message yet — handled as "nothing to read"
             return None
-        message = getattr(result, "message", None) or result
-        content = getattr(message, "content", None)
-        if not content:
+        message = getattr(result, "data", None)
+        if message is None:
             return None
-        text = str(content).strip().lower()
+        message_id = getattr(message, "id", None)
+        if message_id:
+            try:
+                self._client.agent_api_messages.mark_agent_message_processed(
+                    self._chat_id, message_id
+                )
+            except Exception:
+                pass  # best-effort: advancing the queue is not critical to the decision
+        if (getattr(message, "sender_type", "") or "").lower() in {"agent", "system"}:
+            return None  # ignore our own / system posts; only a human reply is the gate
+        raw = getattr(message, "content", "") or ""
+        text = raw.strip().lower()
         if "approve" in text or text in {"y", "yes", "lgtm", "/approve"}:
-            return Decision(
-                issue_id=request.issue_id,
-                decision=DecisionType.APPROVE,
-                actor="human",
-                rationale=str(content)[:200],
-            )
-        if "decline" in text or "reject" in text or text in {"n", "no", "/decline"}:
-            return Decision(
-                issue_id=request.issue_id,
-                decision=DecisionType.DECLINE,
-                actor="human",
-                rationale=str(content)[:200],
-            )
-        return None
+            decision = DecisionType.APPROVE
+        elif "decline" in text or "reject" in text or text in {"n", "no", "/decline"}:
+            decision = DecisionType.DECLINE
+        else:
+            return None
+        return Decision(
+            issue_id=request.issue_id, decision=decision, actor="human", rationale=raw[:200]
+        )
