@@ -6,12 +6,19 @@ Working notes for after the hackathon submission. Not a public-facing doc.
 
 ## 1. Making this repo public (planned)
 
-This repo is **private** for now — it is a hackathon entry. The intended path:
+Current state (updated 2026-06-17):
 
-1. Finish and submit the hackathon project on this private repo.
-2. Create a GitHub **organization** (team/product org).
-3. Move this repo under the org (transfer or re-push), then add members.
-4. Set repo visibility to **internal** (visible to all org members) — or public when ready.
+- [x] Created the GitHub org **`trustband`** (free plan).
+- [x] Transferred the repo to **`trustband/trustband`** (still **private**).
+- [x] Invited **BolynWang** as a repo collaborator (write access; pending accept).
+- [ ] (optional) Add BolynWang as a formal **org member** — needs `admin:org` scope
+      (`gh auth refresh -h github.com -s admin:org`, then re-run the membership PUT) or the
+      org's People → Invite member page.
+- [ ] **Rotate the OpenAI-format key** that was pasted in chat, before any wider sharing.
+- [ ] Make the repo **public** when ready (the submission may need a public repo).
+
+Note: a **free** org has no `internal` visibility (that is Enterprise-only). "Org-internal"
+here means the repo stays **private** and the members/collaborators you add can see it.
 
 Reference commands (`gh` CLI):
 
