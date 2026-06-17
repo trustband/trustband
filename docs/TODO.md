@@ -14,8 +14,8 @@ Current state (updated 2026-06-17):
 - [ ] (optional) Add BolynWang as a formal **org member** — needs `admin:org` scope
       (`gh auth refresh -h github.com -s admin:org`, then re-run the membership PUT) or the
       org's People → Invite member page.
-- [ ] **Rotate the OpenAI-format key** that was pasted in chat, before any wider sharing.
-- [ ] Make the repo **public** when ready (the submission may need a public repo).
+- [ ] **Rotate the OpenAI-format key** that was pasted in chat (user opted to keep it for now; rotate before sharing more widely).
+- [x] Repo is **public** now (`trustband/trustband`); CI (ruff + mypy + pytest + bench) is green.
 
 Note: a **free** org has no `internal` visibility (that is Enterprise-only). "Org-internal"
 here means the repo stays **private** and the members/collaborators you add can see it.
@@ -46,7 +46,7 @@ gh api -X PUT orgs/<org>/memberships/<github-username> -f role=member
 
 ### High leverage — for the Band hackathon specifically
 - [ ] **Make ≥1 agent a real Band peer.** Today all 7 agents run in-process and the bus posts to a Band room as a transcript. Run e.g. the Coder as a separate Band participant (Claude Code / Codex via Band's adapter) so it is genuine cross-framework, cross-process A2A — that is Band's actual pitch.
-- [ ] **Live Band room run** (`--bus band --band-room <id>`): verify `BandBus._read_decision` (human-approval parsing) against the real API shape, then record it. The LLM path is live-verified; the Band-room path is not yet.
+- [ ] **Live Band room run** (`--bus band --band-room <id>`): verify `BandBus._read_decision` (human-approval parsing) against the real API shape, then record it. The LLM path is live-verified; the Band-room path is not yet. **Harness is ready** (`spike/band_hello.py`, `scripts/band_demo.sh`, room id in `$BAND_ROOM`) — blocked only on a real `BAND_API_KEY` from the band.ai agent page, then it is one command.
 - [ ] **Demo video** (2–4 min): a live real-model run, ideally over a real Band room. The strongest single artifact for judging.
 - [ ] **Real-LLM benchmark**: run a few scenarios with `--llm real` and capture the numbers. The current `bench` is canned/deterministic (measures the harness, not model quality).
 
