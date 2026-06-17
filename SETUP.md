@@ -43,6 +43,16 @@ uv run trustband run \
   --bus band --llm real
 ```
 
+To exercise the remote Coder seam, run with `--coder remote` after a Band/Codex or
+Claude Code peer is configured to return a structured `Patch` into the room:
+
+```bash
+uv run trustband run \
+  --repo <your-repo> \
+  --issue <issue.md> \
+  --bus band --band-room <room-id> --llm real --coder remote
+```
+
 > **Status:** `RealLLM`, `OpenAILLM`, and `BandBus` are implemented. The
 > OpenAI-compatible real-LLM path is **verified live** — a real model fixed the
 > bundled `discount` bug end to end through the band (including the revision loop).

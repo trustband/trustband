@@ -72,13 +72,49 @@ class FileChange(BaseModel):
     new_content: str
 
 
+class TextEdit(BaseModel):
+    """A search/replace edit applied to one repo-relative file."""
+
+    path: str
+    find: str
+    replace: str
+    replace_all: bool = False
+
+
+class DeleteFile(BaseModel):
+    """Delete one repo-relative file if it exists."""
+
+    path: str
+
+
 class Patch(BaseModel):
-    """Coder output: a set of file changes for one issue, possibly revised."""
+    """Coder output: file replacements plus optional edit/delete changes."""
 
     issue_id: str = ""  # authoritative value is set by the agent after parsing
     summary: str = ""
     changes: list[FileChange] = Field(default_factory=list)
+    edits: list[TextEdit] = Field(default_factory=list)
+    deletes: list[DeleteFile] = Field(default_factory=list)
     revision: int = 1
+
+    @property
+    def touched_paths(self) -> list[str]:
+        """Return repo-relative paths touched by this patch, preserving first occurrence."""
+        paths: list[str] = []
+        for path in (
+            [change.path for change in self.changes]
+            + [edit.path for edit in self.edits]
+            + [delete.path for delete in self.deletes]
+        ):
+            if path not in paths:
+                paths.append(path)
+        return paths
+
+    def security_snippets(self) -> list[tuple[str, str]]:
+        """Return changed text snippets suitable for deterministic security scanning."""
+        snippets = [(change.path, change.new_content) for change in self.changes]
+        snippets.extend((edit.path, edit.replace) for edit in self.edits)
+        return snippets
 
 
 class SuiteResult(BaseModel):
@@ -88,6 +124,8 @@ class SuiteResult(BaseModel):
     failed: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
     skipped: list[str] = Field(default_factory=list)
+    error_details: dict[str, str] = Field(default_factory=dict)
+    failure_details: dict[str, str] = Field(default_factory=dict)
     returncode: int = 0
     duration_s: float = 0.0
 
@@ -115,6 +153,10 @@ class VerdictReport(BaseModel):
     regressions: list[str] = Field(default_factory=list)
     still_failing: list[str] = Field(default_factory=list)
     touched_files: list[str] = Field(default_factory=list)
+    scope_mode: str = "full"
+    selected_tests: list[str] = Field(default_factory=list)
+    full_suite_run: bool = True
+    scope_reason: str = "full suite"
     assertions: list[AssertionResult] = Field(default_factory=list)
     reasons: list[str] = Field(default_factory=list)
     baseline: SuiteResult | None = None
@@ -207,4 +249,5 @@ class ReproReport(BaseModel):
     reproduced: bool
     target_tests: list[str] = Field(default_factory=list)
     authored_test: Patch | None = None
+    quality_checks: list[AssertionResult] = Field(default_factory=list)
     detail: str = ""

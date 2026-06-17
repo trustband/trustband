@@ -18,6 +18,8 @@ The differentiator is the **Verifier agent**: instead of an LLM grading itself, 
 
 ## Architecture
 
+![TrustBand architecture](./docs/assets/trustband-architecture.svg)
+
 ```mermaid
 flowchart LR
     I[Issue] --> T[Triage]
@@ -51,6 +53,8 @@ Seven specialized agents plus a human gate; every arrow is a typed artifact over
 
 Non-actionable issues stop at Triage; regressing or risky patches trigger a Coder revision loop. All handoffs, structured context exchange, and human approval flow through Band (`--bus band`); an in-memory fake bus runs the same pipeline offline (`--bus memory`).
 
+The Coder can now run locally in-process or through `--coder remote`, where a remote peer returns the structured `Patch` as an independent Band participant seam.
+
 ## Quickstart (offline, free, deterministic)
 
 ```bash
@@ -60,6 +64,7 @@ uv run trustband run --scenario discount          # fix one bug end to end
 uv run trustband run --scenario regression_trap   # Verifier catches a regression, loops
 uv run trustband run --scenario risky_fix         # Security catches an eval()
 uv run trustband bench                            # effect metrics across all scenarios
+uv run trustband run --scenario discount --json   # machine-readable CI/tool output
 ```
 
 Offline mode needs no API keys. **Full usage & features: [docs/USAGE.md](./docs/USAGE.md)**; for live Band / real LLMs see [SETUP.md](./SETUP.md). The real-LLM path (OpenAI-compatible) is verified live — a real model fixed the `discount` bug end to end.
@@ -81,7 +86,7 @@ Full report: [docs/benchmark.md](./docs/benchmark.md).
 
 ## Engineering quality
 
-CI (`.github/workflows/ci.yml`) runs ruff + mypy + 71 tests (93% coverage) + the benchmark on every push. Local equivalent: `bash scripts/smoke.sh`.
+CI (`.github/workflows/ci.yml`) runs ruff + mypy + 93 tests (90% coverage gate, about 93% current coverage) + the benchmark on every push. Local equivalent: `bash scripts/smoke.sh`.
 
 ## Status
 

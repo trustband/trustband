@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="360" viewBox="0 0 1180 360" role="img" aria-labelledby="title desc">
+  <title id="title">TrustBand architecture</title>
+  <desc id="desc">Issue flows through triage, reproducer, planner, coder, verifier, security, reviewer, human gate, and PR artifact.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <style>
+      .box { fill: #f8fafc; stroke: #334155; stroke-width: 2; rx: 8; }
+      .gate { fill: #fff7ed; stroke: #c2410c; stroke-width: 2; rx: 8; }
+      .check { fill: #ecfdf5; stroke: #047857; stroke-width: 2; rx: 8; }
+      .text { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 16px; fill: #0f172a; text-anchor: middle; dominant-baseline: middle; }
+      .small { font-size: 13px; fill: #475569; }
+      .line { stroke: #334155; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+      .loop { stroke: #c2410c; stroke-width: 2; stroke-dasharray: 6 5; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect x="24" y="46" width="104" height="58" class="box"/>
+  <text x="76" y="76" class="text">Issue</text>
+  <rect x="158" y="46" width="104" height="58" class="box"/>
+  <text x="210" y="76" class="text">Triage</text>
+  <rect x="292" y="46" width="124" height="58" class="box"/>
+  <text x="354" y="76" class="text">Reproducer</text>
+  <rect x="446" y="46" width="104" height="58" class="box"/>
+  <text x="498" y="76" class="text">Planner</text>
+  <rect x="580" y="46" width="104" height="58" class="box"/>
+  <text x="632" y="68" class="text">Coder</text>
+  <text x="632" y="90" class="text small">local/remote</text>
+  <rect x="714" y="46" width="112" height="58" class="check"/>
+  <text x="770" y="76" class="text">Verifier</text>
+  <rect x="856" y="46" width="112" height="58" class="check"/>
+  <text x="912" y="76" class="text">Security</text>
+  <rect x="998" y="46" width="112" height="58" class="box"/>
+  <text x="1054" y="76" class="text">Reviewer</text>
+  <rect x="714" y="210" width="126" height="58" class="gate"/>
+  <text x="777" y="239" class="text">Human gate</text>
+  <rect x="876" y="210" width="126" height="58" class="box"/>
+  <text x="939" y="231" class="text">PR.md</text>
+  <text x="939" y="253" class="text small">fix.diff</text>
+
+  <path d="M128 75 H158" class="line"/>
+  <path d="M262 75 H292" class="line"/>
+  <path d="M416 75 H446" class="line"/>
+  <path d="M550 75 H580" class="line"/>
+  <path d="M684 75 H714" class="line"/>
+  <path d="M826 75 H856" class="line"/>
+  <path d="M968 75 H998" class="line"/>
+  <path d="M1054 104 V150 H632 V104" class="loop"/>
+  <text x="834" y="142" class="text small">request changes</text>
+  <path d="M1054 104 V239 H840" class="line"/>
+  <path d="M840 239 H876" class="line"/>
+
+  <rect x="296" y="170" width="568" height="58" fill="#eef2ff" stroke="#4338ca" stroke-width="2" rx="8"/>
+  <text x="580" y="192" class="text">AgentBus typed artifacts</text>
+  <text x="580" y="214" class="text small">Issue → TriageReport → ReproReport → FixPlan → Patch → VerdictReport → SecurityReport → ReviewReport → Decision</text>
+</svg>

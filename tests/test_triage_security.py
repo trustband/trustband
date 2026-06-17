@@ -14,6 +14,7 @@ from trustband.contracts import (
     Patch,
     SecurityReport,
     Severity,
+    TextEdit,
     TriageReport,
 )
 from trustband.llm import FakeLLM
@@ -81,6 +82,16 @@ def test_security_flags_hardcoded_secret():
     bus = InMemoryBus()
     report = SecurityReviewer(bus).review(_issue(), _patch('API_KEY = "sk-secret-123"\n'))
     assert report.clean is False
+
+
+def test_security_flags_risky_text_edit():
+    patch = Patch(
+        issue_id="BUG-1",
+        edits=[TextEdit(path="m.py", find="return x", replace="return eval(x)")],
+    )
+    report = SecurityReviewer(InMemoryBus()).review(_issue(), patch)
+    assert report.clean is False
+    assert report.findings[0].path == "m.py"
 
 
 def test_security_clean_on_safe_patch():

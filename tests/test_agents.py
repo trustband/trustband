@@ -2,10 +2,11 @@
 
 from pathlib import Path
 
-from trustband.agents import Coder, Planner, Reviewer, read_repo_context
+from trustband.agents import Coder, Planner, Reproducer, Reviewer, read_repo_context
 from trustband.bus import InMemoryBus
 from trustband.contracts import FileChange, Issue, Patch, Verdict, VerdictReport
 from trustband.demo import make_demo_fake_llm
+from trustband.llm import FakeLLM
 
 FIXTURE = Path(__file__).parent.parent / "fixtures" / "buggy_app"
 
@@ -59,3 +60,51 @@ def test_reviewer_approves_when_trustworthy():
     good = VerdictReport(issue_id="BUG-1", verdict=Verdict.TRUSTWORTHY)
     review = Reviewer(bus, make_demo_fake_llm()).review(_issue(), _dummy_patch(), good)
     assert review.approved is True
+
+
+def test_reproducer_rejects_trivially_passing_authored_test(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "thing.py").write_text("def broken():\n    return 1\n")
+    issue = Issue(id="BUG-1", title="broken", repo_path=str(repo), description="broken")
+    patch = Patch(
+        issue_id="BUG-1",
+        changes=[
+            FileChange(
+                path="test_thing.py",
+                new_content="def test_trivial():\n    assert True\n",
+            )
+        ],
+    )
+
+    report = Reproducer(InMemoryBus(), FakeLLM({"reproduce": patch.model_dump_json()})).run(
+        issue, []
+    )
+
+    assert report.reproduced is False
+    assert report.authored_test is None
+    assert "did not fail" in report.detail
+
+
+def test_reproducer_rejects_authored_test_with_import_error(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "thing.py").write_text("def broken():\n    return 1\n")
+    issue = Issue(id="BUG-1", title="broken", repo_path=str(repo), description="broken")
+    patch = Patch(
+        issue_id="BUG-1",
+        changes=[
+            FileChange(
+                path="test_thing.py",
+                new_content="from missing import nope\n\n\ndef test_broken():\n    assert nope()\n",
+            )
+        ],
+    )
+
+    report = Reproducer(InMemoryBus(), FakeLLM({"reproduce": patch.model_dump_json()})).run(
+        issue, []
+    )
+
+    assert report.reproduced is False
+    assert report.target_tests == []
+    assert "pytest errors" in report.detail

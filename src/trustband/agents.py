@@ -17,6 +17,7 @@ from pathlib import Path
 
 from trustband.bus import AgentBus, AgentMessage
 from trustband.contracts import (
+    AssertionResult,
     Finding,
     FixPlan,
     Issue,
@@ -105,7 +106,7 @@ class Coder:
             AgentMessage(
                 sender=self.name,
                 kind="note",
-                text=f"patch touches {[change.path for change in patch.changes]}",
+                text=f"patch touches {patch.touched_paths}",
             )
         )
         self.bus.handoff(self.name, "verifier", patch)
@@ -218,6 +219,13 @@ class Reproducer:
                     issue_id=issue.id,
                     reproduced=True,
                     target_tests=list(target_tests),
+                    quality_checks=[
+                        AssertionResult(
+                            name="existing_target_fails",
+                            passed=True,
+                            detail=f"targets={target_tests}",
+                        )
+                    ],
                     detail="target test(s) fail at baseline",
                 )
             )
@@ -232,15 +240,34 @@ class Reproducer:
         authored = parse_with_retry(self.llm, prompt, "reproduce", Patch)
         authored.issue_id = issue.id
         after = run_pytest(issue.repo_path, scaffold=authored)
-        new_red = (set(after.failed) | set(after.errors)) - baseline_red
-        reproduced = bool(new_red)
+        new_failed = set(after.failed) - baseline_red
+        new_errors = set(after.errors) - baseline_red
+        reproduced = bool(new_failed) and not new_errors
+        quality_checks = [
+            AssertionResult(
+                name="authored_test_created_failure",
+                passed=bool(new_failed),
+                detail=f"new_failed={sorted(new_failed)}",
+            ),
+            AssertionResult(
+                name="authored_test_has_no_new_errors",
+                passed=not new_errors,
+                detail=f"new_errors={sorted(new_errors)}",
+            ),
+        ]
+        detail = "authored a failing test"
+        if new_errors:
+            detail = "authored test produced pytest errors, not a clean failing test"
+        elif not new_failed:
+            detail = "authored test did not fail on the buggy code"
         return self._handoff(
             ReproReport(
                 issue_id=issue.id,
                 reproduced=reproduced,
-                target_tests=sorted(new_red),
+                target_tests=sorted(new_failed),
                 authored_test=authored if reproduced else None,
-                detail="authored a failing test" if reproduced else "could not reproduce the bug",
+                quality_checks=quality_checks,
+                detail=detail,
             )
         )
 
@@ -284,13 +311,13 @@ class SecurityReviewer:
     def review(self, issue: Issue, patch: Patch) -> SecurityReport:
         """Scan each changed file for risky patterns and report findings."""
         findings: list[Finding] = []
-        for change in patch.changes:
-            for lineno, line in enumerate(change.new_content.splitlines(), start=1):
+        for path, content in patch.security_snippets():
+            for lineno, line in enumerate(content.splitlines(), start=1):
                 for pattern, severity, message in _RISK_PATTERNS:
                     if pattern.search(line):
                         findings.append(
                             Finding(
-                                severity=severity, message=message, path=change.path, line=lineno
+                                severity=severity, message=message, path=path, line=lineno
                             )
                         )
         if self.use_bandit:
@@ -317,10 +344,10 @@ class SecurityReviewer:
         }
         with tempfile.TemporaryDirectory(prefix="trustband-bandit-") as td:
             root = Path(td)
-            for change in patch.changes:
-                target = root / change.path
+            for path, content in patch.security_snippets():
+                target = root / path
                 target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text(change.new_content)
+                target.write_text(content)
             try:
                 proc = subprocess.run(
                     [sys.executable, "-m", "bandit", "-q", "-f", "json", "-r", str(root)],

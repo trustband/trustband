@@ -14,7 +14,7 @@ echo "==> mypy"
 uv run mypy src
 
 echo "==> pytest"
-uv run pytest -q
+uv run pytest -q --cov=trustband --cov-fail-under=90
 
 echo "==> offline pipeline on the bundled fixture"
 uv run trustband run \

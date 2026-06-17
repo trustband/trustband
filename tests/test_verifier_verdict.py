@@ -8,7 +8,7 @@ the target green while breaking the no-discount and cart-summary tests.
 
 from pathlib import Path
 
-from trustband.contracts import FileChange, Issue, Patch, Verdict
+from trustband.contracts import FileChange, Issue, Patch, TextEdit, Verdict
 from trustband.verifier import _matches, verify
 
 FIXTURE = Path(__file__).parent.parent / "fixtures" / "buggy_app"
@@ -66,6 +66,36 @@ def test_good_patch_is_trustworthy():
     assert report.after is not None and report.after.all_green
 
 
+def test_edit_patch_is_trustworthy():
+    patch = Patch(
+        issue_id="BUG-1",
+        summary="apply percentage discount",
+        edits=[
+            TextEdit(
+                path="pricing.py",
+                find="return _subtotal(items) - discount_rate",
+                replace="return _subtotal(items) * (1 - discount_rate)",
+            )
+        ],
+    )
+    report = verify(_issue(), patch)
+    assert report.verdict == Verdict.TRUSTWORTHY
+    assert report.touched_files == ["pricing.py"]
+
+
+def test_bad_edit_patch_is_rejected_as_apply_error():
+    patch = Patch(
+        issue_id="BUG-1",
+        summary="bad edit",
+        edits=[TextEdit(path="pricing.py", find="missing target", replace="x")],
+    )
+    report = verify(_issue(), patch)
+    assert report.verdict == Verdict.REJECTED
+    assert report.after is not None
+    assert report.after.returncode == -2
+    assert any("<patch-apply-error>" in reason for reason in report.reasons)
+
+
 def test_bad_patch_is_rejected_with_named_regression():
     patch = Patch(
         issue_id="BUG-1",
@@ -81,3 +111,48 @@ def test_bad_patch_is_rejected_with_named_regression():
     assert any(
         "cart_summary" in r or "subtotal_no_discount" in r for r in report.regressions
     )
+
+
+def test_affected_scope_falls_back_to_full_suite_for_source_change():
+    patch = Patch(
+        issue_id="BUG-1",
+        summary="apply percentage discount",
+        edits=[
+            TextEdit(
+                path="pricing.py",
+                find="return _subtotal(items) - discount_rate",
+                replace="return _subtotal(items) * (1 - discount_rate)",
+            )
+        ],
+    )
+    report = verify(
+        _issue(),
+        patch,
+        target_tests=["test_percentage_discount"],
+        verifier_scope="affected",
+    )
+    assert report.verdict == Verdict.TRUSTWORTHY
+    assert report.scope_mode == "affected"
+    assert report.selected_tests == ["test_percentage_discount"]
+    assert report.full_suite_run is True
+    assert "source file" in report.scope_reason
+
+
+def test_affected_scope_can_skip_full_suite_for_test_only_patch():
+    patch = Patch(
+        issue_id="BUG-1",
+        changes=[
+            FileChange(
+                path="test_extra.py",
+                new_content="def test_extra_added_by_scaffold():\n    assert True\n",
+            )
+        ],
+    )
+    report = verify(
+        _issue(),
+        patch,
+        target_tests=["test_extra_added_by_scaffold"],
+        verifier_scope="affected",
+    )
+    assert report.full_suite_run is False
+    assert report.scope_reason == "selected tests passed"

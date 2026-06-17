@@ -14,6 +14,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from trustband.contracts import Patch
+from trustband.patching import apply_patch
 
 _IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", ".git", ".venv", ".pytest_cache")
 
@@ -54,10 +55,7 @@ def materialize_pr(
         _commit(dest, "baseline")
         _git(["checkout", "-q", "-b", branch], dest)
         for patch in patches:
-            for change in patch.changes:
-                target = dest / change.path
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text(change.new_content)
+            apply_patch(dest, patch)
         _commit(dest, message)
     except (OSError, subprocess.SubprocessError):
         return None

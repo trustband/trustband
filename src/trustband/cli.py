@@ -19,7 +19,9 @@ from trustband.bus import AgentBus, InMemoryBus
 from trustband.contracts import Issue
 from trustband.demo import make_demo_fake_llm
 from trustband.llm import BudgetedLLM, LLMClient, OpenAILLM, RealLLM
-from trustband.orchestrator import Orchestrator, RunResult
+from trustband.orchestrator import CodingAgent, Orchestrator, RunResult
+from trustband.output import benchmark_to_json_result, run_to_json_result
+from trustband.remote_agent import RemoteCoder
 from trustband.scenarios import get_scenario
 
 _TEST_RE = re.compile(r"`(test_[A-Za-z0-9_]+)`")
@@ -112,18 +114,27 @@ def _cmd_run(args: argparse.Namespace) -> int:
         issue = load_issue(args.repo, args.issue, args.issue_id)
         llm = _build_llm(args)
     bus = _build_bus(args)
+    coder: CodingAgent
+    if args.coder == "remote":
+        coder = RemoteCoder(bus, peer=args.remote_coder_peer)
+    else:
+        coder = Coder(bus, llm)
     orchestrator = Orchestrator(
         bus,
         Triage(bus, llm),
         Reproducer(bus, llm),
         Planner(bus, llm),
-        Coder(bus, llm),
+        coder,
         SecurityReviewer(bus, use_bandit=args.bandit),
         Reviewer(bus, llm),
         max_revisions=args.max_revisions,
+        verifier_scope=args.verifier_scope,
     )
     result = orchestrator.run(issue)
-    _print_run(result, bus)
+    if args.json:
+        print(run_to_json_result(result).model_dump_json())
+    else:
+        _print_run(result, bus)
     if args.open_pr and result.merged and result.patch is not None:
         from trustband.git_pr import materialize_pr
 
@@ -132,7 +143,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         clone = materialize_pr(
             issue.repo_path, patches, f"fix: {issue.id}", f"artifacts/{issue.id}/pr_clone"
         )
-        if clone is not None:
+        if clone is not None and not args.json:
             print(f"PR branch materialized at: {clone} (run `gh pr create` there)")
     if result.merged:
         return 0
@@ -142,12 +153,33 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
 def _cmd_bench(args: argparse.Namespace) -> int:
     """Execute the 'bench' subcommand: run all scenarios and report metrics."""
-    report = run_benchmark(artifacts_dir=args.artifacts_dir)
+    llm_factory = None
+    if args.llm == "real":
+        real_args = argparse.Namespace(
+            llm="real",
+            model=args.model,
+            max_llm_calls=args.max_llm_calls,
+        )
+
+        def build_real_llm(_scenario) -> LLMClient:
+            return _build_llm(real_args)
+
+        llm_factory = build_real_llm
+    report = run_benchmark(
+        artifacts_dir=args.artifacts_dir,
+        mode=args.llm,
+        model=args.model,
+        llm_factory=llm_factory,
+    )
     markdown = render_report(report)
-    print(markdown)
+    if args.json:
+        print(benchmark_to_json_result(report, mode=args.llm, model=args.model).model_dump_json())
+    else:
+        print(markdown)
     if args.out:
         Path(args.out).write_text(markdown)
-        print(f"(report written to {args.out})")
+        if not args.json:
+            print(f"(report written to {args.out})")
     return 0
 
 
@@ -172,6 +204,13 @@ def main(argv: list[str] | None = None) -> int:
         "--band-agent", default="orchestrator", dest="band_agent", help="this agent's id"
     )
     run.add_argument("--llm", choices=["fake", "real"], default="fake")
+    run.add_argument("--coder", choices=["local", "remote"], default="local")
+    run.add_argument(
+        "--remote-coder-peer",
+        default="coder",
+        dest="remote_coder_peer",
+        help="Band peer name used when --coder remote is selected",
+    )
     run.add_argument("--model", default=None, help="override model id (e.g. gpt-5.4-high)")
     run.add_argument("--bandit", action="store_true", help="enable bandit SAST")
     run.add_argument(
@@ -179,8 +218,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     run.add_argument("--max-revisions", type=int, default=2, dest="max_revisions")
     run.add_argument(
+        "--verifier-scope",
+        choices=["full", "affected"],
+        default="full",
+        dest="verifier_scope",
+        help="run full suite, or affected tests with conservative full-suite fallback",
+    )
+    run.add_argument(
         "--max-llm-calls", type=int, default=30, dest="max_llm_calls", help="per-run LLM call cap"
     )
+    run.add_argument("--json", action="store_true", help="emit machine-readable JSON only")
     run.add_argument(
         "--approval-timeout",
         type=float,
@@ -192,6 +239,10 @@ def main(argv: list[str] | None = None) -> int:
     bench = subparsers.add_parser("bench", help="run all showcase scenarios and report metrics")
     bench.add_argument("--out", default=None, help="write the markdown report to this path")
     bench.add_argument("--artifacts-dir", default="artifacts/bench", dest="artifacts_dir")
+    bench.add_argument("--llm", choices=["fake", "real"], default="fake")
+    bench.add_argument("--model", default=None, help="override real benchmark model id")
+    bench.add_argument("--max-llm-calls", type=int, default=30, dest="max_llm_calls")
+    bench.add_argument("--json", action="store_true", help="emit machine-readable JSON only")
 
     args = parser.parse_args(argv)
     if args.command == "run":

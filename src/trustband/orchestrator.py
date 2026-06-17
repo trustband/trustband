@@ -9,12 +9,12 @@ trustworthy verdict AND clean security AND reviewer approval reach the human gat
 
 from __future__ import annotations
 
-import difflib
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
-from trustband.agents import Coder, Planner, Reproducer, Reviewer, SecurityReviewer, Triage
+from trustband.agents import Planner, Reproducer, Reviewer, SecurityReviewer, Triage
 from trustband.bus import AgentBus, AgentMessage, ApprovalRequest
 from trustband.contracts import (
     Decision,
@@ -27,6 +27,7 @@ from trustband.contracts import (
     TriageReport,
     VerdictReport,
 )
+from trustband.patching import render_diff
 from trustband.runner import run_pytest
 from trustband.verifier import verify
 
@@ -40,6 +41,13 @@ _PARTICIPANTS = [
     "reviewer",
     "human",
 ]
+
+
+class CodingAgent(Protocol):
+    """Minimal interface required from local or remote coding agents."""
+
+    def code(self, issue: Issue, plan: FixPlan, prior_review: ReviewReport | None = None) -> Patch:
+        """Produce a patch for the issue and plan."""
 
 
 @dataclass
@@ -70,20 +78,7 @@ class RunResult:
 
 def _unified_diff(repo_path: str | Path, patches: Iterable[Patch]) -> str:
     """Render one or more patches as a unified diff against the current repo."""
-    root = Path(repo_path)
-    blocks: list[str] = []
-    for patch in patches:
-        for change in patch.changes:
-            target = root / change.path
-            original = target.read_text() if target.exists() else ""
-            diff = difflib.unified_diff(
-                original.splitlines(keepends=True),
-                change.new_content.splitlines(keepends=True),
-                fromfile=f"a/{change.path}",
-                tofile=f"b/{change.path}",
-            )
-            blocks.append("".join(diff))
-    return "\n".join(blocks)
+    return render_diff(repo_path, patches)
 
 
 def _render_pr(
@@ -132,11 +127,12 @@ class Orchestrator:
         triage: Triage,
         reproducer: Reproducer,
         planner: Planner,
-        coder: Coder,
+        coder: CodingAgent,
         security: SecurityReviewer,
         reviewer: Reviewer,
         max_revisions: int = 2,
         artifacts_dir: str | Path = "artifacts",
+        verifier_scope: str = "full",
     ) -> None:
         """Bind the collaboration layer, the agents, and run limits."""
         self.bus = bus
@@ -148,6 +144,7 @@ class Orchestrator:
         self.reviewer = reviewer
         self.max_revisions = max(1, max_revisions)
         self.artifacts_dir = Path(artifacts_dir)
+        self.verifier_scope = verifier_scope
 
     def _stopped(self, issue: Issue, triage: TriageReport, repro: ReproReport | None) -> RunResult:
         """Build a RunResult for a run that stopped before the fix loop."""
@@ -221,7 +218,12 @@ class Orchestrator:
             patch = self.coder.code(issue, plan, review)
             patch.revision = revision
             verdict = verify(
-                issue, patch, target_tests=targets, scaffold=scaffold, baseline=baseline
+                issue,
+                patch,
+                target_tests=targets,
+                scaffold=scaffold,
+                baseline=baseline,
+                verifier_scope=self.verifier_scope,
             )
             self.bus.send(
                 AgentMessage(

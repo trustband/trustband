@@ -52,12 +52,12 @@ gh api -X PUT orgs/<org>/memberships/<github-username> -f role=member
 
 ### Robustness / product
 - [x] **Cost guardrail** — DONE. `BudgetedLLM` caps completions per run (`--max-llm-calls`, default 30) and raises instead of silently spending.
-- [ ] **Diff/edit-based patches** instead of full-file replacement — scales to large real files, less token cost, no risk of the model dropping code.
-- [ ] **Reproducer test-quality check**: confirm the authored failing test fails for the right reason (guard against trivially-true tests that would hollow out the "trust" thesis).
-- [ ] **Verifier scoping**: run only affected tests on large repos instead of the whole suite each revision.
-- [ ] **`--json` output** for the CLI, so TrustBand can be a real CI step.
+- [x] **Diff/edit-based patches** — DONE. `Patch` supports full-file replacement, search/replace edits, and deletes through a shared applicator used by the runner, PR diff, and git materialization.
+- [x] **Reproducer test-quality check** — DONE. Authored tests must create a new clean failing test; trivially passing tests and pytest collection/import errors stop before Coder.
+- [x] **Verifier scoping** — DONE. `--verifier-scope affected` can run selected target tests first, with conservative full-suite fallback for source changes.
+- [x] **`--json` output** — DONE. `trustband run --json` and `trustband bench --json` emit stable machine-readable output.
 
 ### Polish
-- [ ] Dedup the baseline pytest run (the Reproducer and the orchestrator both compute it once).
-- [ ] Consider raising `--cov-fail-under` (currently 80; actual coverage is 93%).
-- [ ] Rendered architecture image (PNG/SVG) for the README and the demo video, not just the mermaid source.
+- [x] Dedup the baseline pytest run — DONE. The orchestrator computes baseline once per run and reuses it across Verifier revisions; regression coverage now locks this in.
+- [x] Raise `--cov-fail-under` — DONE. CI now gates at 90%.
+- [x] Rendered architecture image (SVG) for the README — DONE at `docs/assets/trustband-architecture.svg`.

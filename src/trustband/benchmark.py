@@ -8,10 +8,12 @@ Everything runs offline and deterministically, so the numbers are reproducible.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from trustband.agents import Coder, Planner, Reproducer, Reviewer, SecurityReviewer, Triage
 from trustband.bus import InMemoryBus
+from trustband.llm import LLMClient
 from trustband.orchestrator import Orchestrator, RunResult
 from trustband.scenarios import SCENARIOS, Scenario
 
@@ -29,6 +31,8 @@ class ScenarioOutcome:
     regressions_caught: int
     security_blocks: int
     note: str
+    status: str = "ok"
+    failure_reason: str | None = None
 
 
 @dataclass
@@ -36,6 +40,8 @@ class BenchmarkReport:
     """Aggregate metrics across all scenario outcomes."""
 
     outcomes: list[ScenarioOutcome]
+    mode: str = "fake"
+    model: str | None = None
 
     @property
     def total(self) -> int:
@@ -86,10 +92,14 @@ class BenchmarkReport:
         return round(self.correct / self.total, 2) if self.total else 0.0
 
 
-def _run_scenario(scenario: Scenario, artifacts_dir: str) -> RunResult:
-    """Run one scenario on a fresh bus + its canned FakeLLM."""
+def _run_scenario(
+    scenario: Scenario,
+    artifacts_dir: str,
+    llm_factory: Callable[[Scenario], LLMClient] | None = None,
+) -> RunResult:
+    """Run one scenario on a fresh bus and selected LLM client."""
     bus = InMemoryBus()
-    llm = scenario.llm_factory()
+    llm = llm_factory(scenario) if llm_factory is not None else scenario.llm_factory()
     orchestrator = Orchestrator(
         bus,
         Triage(bus, llm),
@@ -104,13 +114,36 @@ def _run_scenario(scenario: Scenario, artifacts_dir: str) -> RunResult:
 
 
 def run_benchmark(
-    scenarios: list[Scenario] | None = None, artifacts_dir: str = "artifacts/bench"
+    scenarios: list[Scenario] | None = None,
+    artifacts_dir: str = "artifacts/bench",
+    *,
+    mode: str = "fake",
+    model: str | None = None,
+    llm_factory: Callable[[Scenario], LLMClient] | None = None,
 ) -> BenchmarkReport:
     """Run every scenario and collect a :class:`BenchmarkReport`."""
     scenarios = scenarios if scenarios is not None else SCENARIOS
     outcomes: list[ScenarioOutcome] = []
     for scenario in scenarios:
-        result = _run_scenario(scenario, artifacts_dir)
+        try:
+            result = _run_scenario(scenario, artifacts_dir, llm_factory)
+        except Exception as exc:
+            outcomes.append(
+                ScenarioOutcome(
+                    name=scenario.name,
+                    expected_merge=scenario.expected_merge,
+                    merged=False,
+                    correct=False,
+                    revisions=0,
+                    verifier_rejections=0,
+                    regressions_caught=0,
+                    security_blocks=0,
+                    note=scenario.note,
+                    status="error",
+                    failure_reason=str(exc),
+                )
+            )
+            continue
         outcomes.append(
             ScenarioOutcome(
                 name=scenario.name,
@@ -124,7 +157,7 @@ def run_benchmark(
                 note=scenario.note,
             )
         )
-    return BenchmarkReport(outcomes)
+    return BenchmarkReport(outcomes, mode=mode, model=model)
 
 
 def _summary_rows(report: BenchmarkReport) -> list[str]:
@@ -153,6 +186,7 @@ def _scenario_row(outcome: ScenarioOutcome) -> str:
         str(outcome.verifier_rejections),
         str(outcome.regressions_caught),
         str(outcome.security_blocks),
+        outcome.status,
         outcome.note,
     ]
     return "| " + " | ".join(cells) + " |"
@@ -162,16 +196,17 @@ def render_report(report: BenchmarkReport) -> str:
     """Render the benchmark report as Markdown."""
     header = (
         "| scenario | expected | merged | correct | revisions | "
-        "verifier_rej | regressions | security_blocks | note |"
+        "verifier_rej | regressions | security_blocks | status | note |"
     )
-    divider = "|" + "---|" * 9
+    divider = "|" + "---|" * 10
     rows = [_scenario_row(outcome) for outcome in report.outcomes]
     return "\n".join(
         [
             "# TrustBand benchmark",
             "",
-            "Offline, deterministic run across all bundled showcase scenarios "
-            "(`uv run trustband bench`).",
+            f"Mode: `{report.mode}`" + (f", model: `{report.model}`." if report.model else "."),
+            "",
+            "Run across all bundled showcase scenarios (`uv run trustband bench`).",
             "",
             "> **What this measures:** the orchestration and decision logic — the triage "
             "gate, the Verifier catching a regression, the Security agent blocking a risky "

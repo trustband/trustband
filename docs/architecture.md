@@ -5,6 +5,8 @@ room. Every arrow below is a typed artifact handed off over the `AgentBus`. Trus
 rests on two complementary checks — the Verifier (regressions) and the Security
 agent (risky-but-passing patches) — and the Reproducer proves the bug first.
 
+![TrustBand architecture](./assets/trustband-architecture.svg)
+
 ```mermaid
 flowchart LR
     I[Issue] --> T[Triage]
@@ -57,6 +59,12 @@ Agents depend only on the interface (`send` / `handoff` / `share_context` /
 `request_approval`), so the unverified Band API never leaks into agent logic.
 The same seam exists for the model: `FakeLLM` vs `RealLLM` (`src/trustband/llm.py`).
 
+The Coder also has a remote-peer seam (`src/trustband/remote_agent.py`): the
+orchestrator can send a structured remote task and consume a returned `Patch`
+instead of calling the in-process Coder. This is the local contract needed for a
+Band-hosted Claude Code/Codex peer; the default offline path still uses the local
+Coder.
+
 ## Structured-context contracts
 
 All handoffs are Pydantic models (`src/trustband/contracts.py`):
@@ -64,6 +72,17 @@ All handoffs are Pydantic models (`src/trustband/contracts.py`):
 SecurityReport → ReviewReport → Decision`. They are both the "structured context" exchanged in
 the room and the objective surface the Verifier, Security agent, and tests assert
 against.
+
+`Patch` supports both full-file replacement and search/replace edits. A single
+patch applicator is used by the runner, git materialization, and PR diff rendering
+so every path applies the same patch semantics.
+
+## Verifier scoping
+
+The default verifier mode runs the full target suite. `--verifier-scope affected`
+can first run selected target tests, but source-file changes conservatively fall
+back to the full suite before a trustworthy verdict is issued. This keeps the
+regression guarantee intact while providing a path to faster large-repo runs.
 
 ## Showcase scenarios + metrics
 

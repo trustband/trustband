@@ -3,6 +3,7 @@
 from trustband.contracts import (
     Decision,
     DecisionType,
+    DeleteFile,
     FileChange,
     Finding,
     FixPlan,
@@ -12,6 +13,7 @@ from trustband.contracts import (
     ReviewStatus,
     Severity,
     SuiteResult,
+    TextEdit,
     Verdict,
     VerdictReport,
 )
@@ -28,11 +30,15 @@ def test_fixplan_and_patch_round_trip():
         issue_id="BUG-1",
         summary="apply percentage",
         changes=[FileChange(path="pricing.py", new_content="x = 1\n")],
+        edits=[TextEdit(path="other.py", find="old", replace="new")],
+        deletes=[DeleteFile(path="dead.py")],
         revision=2,
     )
     assert FixPlan.model_validate(plan.model_dump()) == plan
     assert Patch.model_validate(patch.model_dump()) == patch
     assert patch.changes[0].path == "pricing.py"
+    assert patch.touched_paths == ["pricing.py", "other.py", "dead.py"]
+    assert patch.security_snippets() == [("pricing.py", "x = 1\n"), ("other.py", "new")]
 
 
 def test_suite_result_all_green():

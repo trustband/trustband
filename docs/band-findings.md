@@ -42,8 +42,14 @@ triage → reproducer → planner → coder → verifier → security → review
 all posted to the room; the human replied `approve` in band.ai; `BandBus._read_decision`
 parsed it → merged. Verdict TRUSTWORTHY, 0 regressions. Artifact: `artifacts/BUG-1/PR.md`.
 
-**Still open**: how the Claude Code / Codex adapters register as *agent* peers (to make one
-of the seven agents a separate cross-process Band participant, not just the human).
+**Implemented locally**: `src/trustband/remote_agent.py` adds a Coder-compatible
+remote peer seam. The orchestrator can send a structured remote task and consume
+a returned `RemotePatch`, with tests proving the pipeline can run with the Coder
+as a remote participant contract.
+
+**Still open for live adapter wiring**: how the Claude Code / Codex adapters
+register as *agent* peers in the user's Band workspace, then route their returned
+patch into TrustBand's `RemotePatch` context key.
 
 ## Why this does not block us
 

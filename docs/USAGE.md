@@ -94,7 +94,7 @@ Requires Python 3.11+ (uv fetches one if needed).
 ## 5. Quickstart (offline, free, deterministic)
 
 ```bash
-uv run pytest -q                                   # 71 tests
+uv run pytest -q                                   # 93 tests
 uv run trustband run --scenario discount           # one bug -> verified PR
 uv run trustband run --scenario regression_trap    # Verifier catches a regression, loops
 uv run trustband run --scenario risky_fix          # Security catches an eval(), loops
@@ -121,18 +121,27 @@ Convenience scripts: `bash scripts/smoke.sh` (ruff + mypy + tests + pipeline + b
 | `--band-room <id>` | – | Band chat/room id (required for `--bus band`) |
 | `--band-agent <id>` | `orchestrator` | This agent's id on Band |
 | `--llm {fake,real}` | `fake` | Fake (canned) or a real model |
+| `--coder {local,remote}` | `local` | Use the in-process Coder or a remote coder peer seam |
+| `--remote-coder-peer <name>` | `coder` | Remote peer name used by `--coder remote` |
 | `--model <id>` | – | Override the model id (e.g. `gpt-5.4-high`) |
 | `--bandit` | off | Add bandit SAST to the Security agent |
 | `--open-pr` | off | Materialize a real git branch on an isolated clone |
 | `--max-revisions <n>` | `2` | Coder↔Reviewer revision rounds |
+| `--verifier-scope {full,affected}` | `full` | Run the full suite or affected tests with conservative full-suite fallback |
+| `--json` | off | Emit a single machine-readable JSON object on stdout |
 
 Exit code: `0` if merged or correctly filtered as non-actionable, else `1`.
 
 ### `trustband bench`
 
 ```bash
-uv run trustband bench [--out docs/benchmark.md] [--artifacts-dir artifacts/bench]
+uv run trustband bench [--out docs/benchmark.md] [--artifacts-dir artifacts/bench] [--json]
+uv run trustband bench --llm real --model <id> --json
 ```
+
+The default benchmark is deterministic and uses each scenario's canned `FakeLLM`.
+`--llm real` is opt-in and measures model behavior; each scenario records its own
+status so one model/API failure does not abort the whole sweep.
 
 ---
 
@@ -203,6 +212,9 @@ These measure the **orchestration and decision logic** on canned fixes (FakeLLM)
 — they are reproducible but do not measure a real model's coding ability. Run
 with `--llm real` to benchmark that.
 
+For CI or dashboard ingestion, use `--json` on either subcommand. JSON output is
+not mixed with the human transcript.
+
 ---
 
 ## 10. Project layout
@@ -222,7 +234,7 @@ src/trustband/
   scenarios.py     # showcase registry + canned FakeLLMs
   cli.py           # `trustband run` / `trustband bench`
 fixtures/          # showcase target repos
-tests/             # 71 tests
+tests/             # 93 tests
 ```
 
 ---
@@ -230,5 +242,5 @@ tests/             # 71 tests
 ## 11. Quality gates
 
 CI (`.github/workflows/ci.yml`) runs on every push: **ruff** (lint), **mypy**
-(types), **pytest** (71 tests, 93% coverage, `--cov-fail-under=80`), and the
-**benchmark**. Local equivalent: `bash scripts/smoke.sh`.
+(types), **pytest** (93 tests, about 93% coverage, `--cov-fail-under=90`), and
+the **benchmark**. Local equivalent: `bash scripts/smoke.sh`.

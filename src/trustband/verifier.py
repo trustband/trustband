@@ -10,6 +10,8 @@ deterministically testable without spawning a subprocess.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from trustband.contracts import (
     AssertionResult,
     Issue,
@@ -19,6 +21,8 @@ from trustband.contracts import (
     VerdictReport,
 )
 from trustband.runner import run_pytest
+
+VerifierScope = str
 
 
 def _matches(target: str, nodeid: str) -> bool:
@@ -36,6 +40,11 @@ def judge(
     baseline: SuiteResult,
     after: SuiteResult,
     target_tests: list[str] | None = None,
+    *,
+    scope_mode: VerifierScope = "full",
+    selected_tests: list[str] | None = None,
+    full_suite_run: bool = True,
+    scope_reason: str = "full suite",
 ) -> VerdictReport:
     """Decide whether ``patch`` earns the merge, given baseline and post-patch runs."""
     base_pass = set(baseline.passed)
@@ -62,7 +71,7 @@ def judge(
     targets_pass = bool(targets) and all(target_green(test) for test in targets)
     no_regressions = not regressions
     suite_green = after.all_green
-    patch_nonempty = bool(patch.changes)
+    patch_nonempty = bool(patch.touched_paths)
 
     assertions = [
         AssertionResult(
@@ -77,7 +86,7 @@ def judge(
         AssertionResult(
             name="patch_nonempty",
             passed=patch_nonempty,
-            detail=f"files={[c.path for c in patch.changes]}",
+            detail=f"files={patch.touched_paths}",
         ),
     ]
 
@@ -103,12 +112,37 @@ def judge(
         newly_passing=newly_passing,
         regressions=regressions,
         still_failing=still_failing,
-        touched_files=[change.path for change in patch.changes],
+        touched_files=patch.touched_paths,
+        scope_mode=scope_mode,
+        selected_tests=selected_tests or [],
+        full_suite_run=full_suite_run,
+        scope_reason=scope_reason,
         assertions=assertions,
         reasons=reasons,
         baseline=baseline,
         after=after,
     )
+
+
+def _select_targets(target_tests: list[str] | None) -> list[str]:
+    """Return pytest targets for affected-scope execution."""
+    return list(target_tests or [])
+
+
+def _needs_full_suite(
+    patch: Patch,
+    selected_tests: list[str],
+    subset_after: SuiteResult,
+) -> tuple[bool, str]:
+    """Decide whether affected-scope evidence needs a full-suite fallback."""
+    if not selected_tests:
+        return True, "no affected tests selected"
+    if not subset_after.all_green:
+        return True, "selected tests did not pass"
+    source_paths = [path for path in patch.touched_paths if not Path(path).name.startswith("test_")]
+    if source_paths:
+        return True, "source file change needs full regression check"
+    return False, "selected tests passed"
 
 
 def verify(
@@ -117,6 +151,7 @@ def verify(
     target_tests: list[str] | None = None,
     scaffold: Patch | None = None,
     baseline: SuiteResult | None = None,
+    verifier_scope: VerifierScope = "full",
 ) -> VerdictReport:
     """Run baseline + post-patch suites on the issue's repo and judge the patch.
 
@@ -125,5 +160,43 @@ def verify(
     """
     if baseline is None:
         baseline = run_pytest(issue.repo_path, scaffold=scaffold)
+    if verifier_scope == "affected":
+        selected_tests = _select_targets(target_tests)
+        subset_after = run_pytest(issue.repo_path, patch, scaffold=scaffold, targets=selected_tests)
+        needs_full, reason = _needs_full_suite(patch, selected_tests, subset_after)
+        if not needs_full:
+            return judge(
+                issue,
+                patch,
+                baseline,
+                subset_after,
+                target_tests,
+                scope_mode=verifier_scope,
+                selected_tests=selected_tests,
+                full_suite_run=False,
+                scope_reason=reason,
+            )
+        after = run_pytest(issue.repo_path, patch, scaffold=scaffold)
+        return judge(
+            issue,
+            patch,
+            baseline,
+            after,
+            target_tests,
+            scope_mode=verifier_scope,
+            selected_tests=selected_tests,
+            full_suite_run=True,
+            scope_reason=reason,
+        )
     after = run_pytest(issue.repo_path, patch, scaffold=scaffold)
-    return judge(issue, patch, baseline, after, target_tests)
+    return judge(
+        issue,
+        patch,
+        baseline,
+        after,
+        target_tests,
+        scope_mode=verifier_scope,
+        selected_tests=[],
+        full_suite_run=True,
+        scope_reason="full suite requested",
+    )
