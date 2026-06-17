@@ -104,12 +104,12 @@ class _BandResource:
     """Mocks band's agent_api_messages using the REAL response/message types."""
 
     def __init__(self):
-        self.posted: list[tuple[str, str]] = []
+        self.posted: list[tuple[str, str, list[str]]] = []  # (chat_id, content, mention_ids)
         self.queue: list[tuple[str, str]] = []  # (content, sender_type)
         self.processed: list[str] = []
 
     def create_agent_chat_message(self, chat_id, message):
-        self.posted.append((chat_id, message.content))
+        self.posted.append((chat_id, message.content, [m.id for m in message.mentions]))
 
     def get_agent_next_message(self, chat_id):
         from thenvoi_rest.agent_api_messages.types.get_agent_next_message_response import (
@@ -129,13 +129,24 @@ class _BandResource:
         self.processed.append(message_id)
 
 
+class _Participants:
+    """Room has the agent itself plus a human — BandBus must mention the human, not self."""
+
+    def list_agent_chat_participants(self, chat_id):
+        agent = type("P", (), {"id": "agent-uuid"})()
+        human = type("P", (), {"id": "human-uuid"})()
+        return type("R", (), {"data": [agent, human]})()
+
+
 class _BandClient:
     def __init__(self):
         self.agent_api_messages = _BandResource()
+        self.agent_api_participants = _Participants()
 
 
 def _band(monkeypatch):
     monkeypatch.setenv("BAND_API_KEY", "test")
+    monkeypatch.setenv("BAND_AGENT_ID", "agent-uuid")
     bus = BandBus(chat_id="room-1", approval_timeout=1, poll_interval=0)
     bus._client = _BandClient()
     return bus
@@ -144,7 +155,10 @@ def _band(monkeypatch):
 def test_band_send_posts_to_room(monkeypatch):
     bus = _band(monkeypatch)
     bus.send(AgentMessage(sender="x", kind="note", text="hello"))
-    assert bus._client.agent_api_messages.posted
+    chat_id, content, mention_ids = bus._client.agent_api_messages.posted[-1]
+    assert "hello" in content  # the wire payload wraps the message envelope
+    assert mention_ids == ["human-uuid"]  # Band requires mentioning another participant...
+    assert "agent-uuid" not in mention_ids  # ...and rejects mentioning yourself
     assert bus.history()[-1].text == "hello"
 
 

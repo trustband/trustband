@@ -47,12 +47,19 @@ def test_real_llm_live_returns_json():
 
 @pytest.mark.integration
 @pytest.mark.skipif(
-    not (os.environ.get("BAND_API_KEY") and os.environ.get("BAND_ROOM")),
-    reason="needs BAND_API_KEY and BAND_ROOM",
+    not (os.environ.get("BAND_API_KEY") and os.environ.get("TRUSTBAND_LIVE_BAND_ROOM")),
+    reason="needs BAND_API_KEY + TRUSTBAND_LIVE_BAND_ROOM (a room the agent is a participant in)",
 )
 def test_band_bus_round_trip():
+    """Live round-trip, opt-in only.
+
+    Band rejects any message with no mention and rejects mentioning yourself, so a real
+    post needs a room that already contains another participant. That cannot be inferred
+    from the always-present ``BAND_ROOM``; the operator sets ``TRUSTBAND_LIVE_BAND_ROOM``
+    to a room they have added the agent to (with a human/peer) to opt this check in.
+    """
     from trustband.bus import AgentMessage
 
-    bus = BandBus(chat_id=os.environ["BAND_ROOM"])
+    bus = BandBus(chat_id=os.environ["TRUSTBAND_LIVE_BAND_ROOM"])
     bus.send(AgentMessage(sender="test", kind="note", text="trustband live ping"))
     assert bus.history()[-1].text == "trustband live ping"

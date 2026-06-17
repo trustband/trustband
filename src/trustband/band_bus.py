@@ -32,19 +32,30 @@ class BandBus(AgentBus):
         chat_id: str,
         agent_id: str = "orchestrator",
         api_key: str | None = None,
+        agent_uuid: str | None = None,
         base_url: str | None = "https://app.band.ai",
         approval_timeout: float = 300.0,
         poll_interval: float = 3.0,
     ) -> None:
-        """Validate the key and build the Band REST client (clear error if absent)."""
+        """Validate credentials and build the Band REST client (clear error if absent)."""
         key = api_key or os.environ.get("BAND_API_KEY")
         if not key:
             raise RuntimeError("BAND_API_KEY is required for --bus band; use --bus memory offline")
+        self._agent_uuid = agent_uuid or os.environ.get("BAND_AGENT_ID")
+        if not self._agent_uuid:
+            raise RuntimeError(
+                "BAND_AGENT_ID is required for --bus band (agent UUID, used for mentions)"
+            )
         try:
-            from band.client.rest import ChatMessageRequest, RestClient
+            from band.client.rest import (
+                ChatMessageRequest,
+                ChatMessageRequestMentionsItem,
+                RestClient,
+            )
         except ImportError as exc:  # pragma: no cover - depends on the optional 'live' extra
             raise RuntimeError("band-sdk not installed; run `uv sync --extra live`") from exc
         self._message_request = ChatMessageRequest
+        self._mention_item = ChatMessageRequestMentionsItem
         if base_url:
             self._client = RestClient(api_key=key, base_url=base_url)
         else:
@@ -55,12 +66,42 @@ class BandBus(AgentBus):
         self._poll_interval = poll_interval
         self._messages: list[AgentMessage] = []
         self._context: dict[str, dict[str, Any]] = {}
+        self._mentions: list[Any] | None = None
+
+    def _recipient_mentions(self) -> list[Any]:
+        """Mentions for outgoing messages: every room participant except this agent.
+
+        Band rejects messages with no mention and rejects mentioning yourself
+        (``cannot_mention_self``), so an agent must @ another participant. Cached after
+        the first lookup.
+        """
+        if self._mentions is None:
+            try:
+                resp = self._client.agent_api_participants.list_agent_chat_participants(
+                    self._chat_id
+                )
+            except Exception as exc:
+                raise RuntimeError(
+                    f"cannot read participants of room {self._chat_id} ({exc}); "
+                    "is the agent added to this room?"
+                ) from exc
+            others = [
+                pid
+                for p in (getattr(resp, "data", None) or [])
+                if (pid := getattr(p, "id", None)) and pid != self._agent_uuid
+            ]
+            if not others:
+                raise RuntimeError(
+                    "Band requires mentioning another participant, but this room has only the "
+                    "agent — add a human (or another agent) to the room"
+                )
+            self._mentions = [self._mention_item(id=pid) for pid in others]
+        return self._mentions
 
     def _post(self, content: str) -> None:
-        """Post a message to the Band room (``mentions`` is required by the SDK schema)."""
-        self._client.agent_api_messages.create_agent_chat_message(
-            self._chat_id, message=self._message_request(content=content, mentions=[])
-        )
+        """Post a message to the room, mentioning the other participant(s) (Band requires it)."""
+        message = self._message_request(content=content, mentions=self._recipient_mentions())
+        self._client.agent_api_messages.create_agent_chat_message(self._chat_id, message=message)
 
     def send(self, message: AgentMessage) -> None:
         """Mirror the message locally and post it to the room."""
