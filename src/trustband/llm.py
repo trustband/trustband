@@ -178,7 +178,9 @@ class OpenAILLM(LLMClient):
         last_transport_error: Exception | None = None
         for attempt in range(transport_retries + 1):
             try:
-                response = self._httpx.post(url, headers=headers, json=payload, timeout=self._timeout)
+                response = self._httpx.post(
+                    url, headers=headers, json=payload, timeout=self._timeout
+                )
             except self._httpx.TransportError as exc:  # network/TLS blip — worth retrying
                 last_transport_error = exc
                 time.sleep(1.5 * (attempt + 1))

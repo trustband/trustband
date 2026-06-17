@@ -25,7 +25,7 @@ def main() -> int:
         raise SystemExit("set BAND_ROOM to the Band chat/room id (and BAND_API_KEY)")
     bus = BandBus(chat_id=room)  # reads BAND_API_KEY from the environment
     bus.send(AgentMessage(sender="band-hello", kind="note", text="TrustBand connectivity check"))
-    print(f"posted 1 message to room {room}; local transcript holds {len(bus.history())} message(s)")
+    print(f"posted 1 message to room {room}; transcript holds {len(bus.history())} message(s)")
     return 0
 
 
